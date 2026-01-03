@@ -1,88 +1,117 @@
-# 随机迷宫生成器 (Random Maze Generator)
+# Fershli4 Maze Generator & Viewer
 
-这个仓库包含了一个基于Python的随机迷宫生成器，能够为3D物理迷宫游戏"迷宫球"构建复杂的3D迷宫。
+这是一个基于 Python 的程序化内容生成 (PCG) 工具套件，专为 Roguelike 游戏（如“跃入迷城”）设计。它负责读取 UE5 导出的配置表，生成逻辑严密的 3D 迷宫布局，并提供 H5 可视化工具以便快速检阅。
 
-## 项目概述
+## ✨ 主要特性 (Features)
 
-本项目实现了一个程序化的迷宫生成系统，具有以下特点：
+*   **程序化生成 (PCG)**: 基于“难度驱动的生长算法”，自动构建复杂的 3D 轨道迷宫。
+*   **UE5 工作流兼容**: 直接读取 UE5 导出的 CSV 轨道配置，输出可直接导入 UE5 的 JSON 数据。
+*   **严密的逻辑校验**: 
+    *   **全整数逻辑坐标**: 杜绝浮点数误差带来的对齐问题。
+    *   **AABB 碰撞检测**: 确保生成的轨道互不穿插。
+    *   **连通性保证**: 自动回溯死路，确保路径有效。
+*   **Web 可视化**: 内置 Three.js 开发的 H5 查看器，无需启动引擎即可快速预览迷宫结构和难度分布。
 
-- **模块化设计**: 基于预定义的轨道模块构建迷宫
-- **智能算法**: 使用迭代生成算法，确保迷宫的连通性和可玩性
-- **难度控制**: 支持动态难度调整和检查点系统
-- **3D支持**: 完全支持三维迷宫生成
-- **可视化工具**: 提供ASCII渲染工具用于快速预览
+## 📁 项目结构 (Project Structure)
 
-## 核心文件说明
+```text
+.
+├── maze_generator.py          # [核心] 迷宫生成脚本
+├── render_maze.html           # [工具] H5 3D 迷宫查看器 (基于 Three.js)
+├── rail_config.csv            # [配置] 轨道零件配置表 (UE导出)
+├── template_maze_layout.json  # [参考] JSON 数据结构模板
+├── pseudo.md                  # [文档] 算法逻辑流程图 (Mermaid)
+├── README.md                  # [文档] 项目说明文档
+└── output/                    # [输出] 生成结果目录
+    └── maze_layout_xxxx.json  # 自动生成的迷宫文件
+```
 
-### `generator.py` - 核心生成器
-主要的迷宫生成脚本，包含：
-- 轨道数据加载和解析
-- 迷宫生成算法实现
-- 难度管理和检查点系统
-- JSON格式输出
+## 🛠️ 快速开始 (Getting Started)
 
-### `rail_config.csv` - 轨道配置
-包含所有可用轨道模块的定义，包括：
-- 轨道尺寸和类型
-- 出口方向和位置
-- 难度值和旋转选项
+### 环境需求
 
-### `render_maze.py` - 可视化工具
-将生成的迷宫布局渲染为ASCII字符图，便于快速预览。
+*   **Python**: 3.8 或更高版本
+*   **依赖库**: `pandas`
 
-### `test_maze.py` - 测试脚本
-验证生成的迷宫是否符合设计要求。
+### 安装
 
-## 快速开始
+1.  克隆仓库或下载源码。
+2.  安装必要的 Python 依赖：
 
-1. **生成迷宫**:
-   ```bash
-   python generator.py
-   ```
+```bash
+pip install pandas
+```
 
-2. **预览迷宫**:
-   ```bash
-   python render_maze.py
-   ```
+### 使用方法
 
-3. **运行测试**:
-   ```bash
-   python test_maze.py
-   ```
+#### 1. 生成迷宫
 
-## 配置参数
+直接运行 Python 脚本。脚本会自动加载同目录下的 `rail_config.csv`。
 
-在 `generator.py` 文件顶部可以调整以下参数：
+```bash
+python maze_generator.py
+```
 
-- `MIN_DIFFICULTY` / `MAX_DIFFICULTY`: 迷宫难度范围
-- `BUILD_SPACE_SIZE`: 建造空间尺寸
-- `SAFETY_ZONE_SIZE`: 安全区尺寸
-- `CHECKPOINT_COUNT`: 检查点数量
-- `SEED`: 随机种子（None表示随机）
+*   **输出**: 成功执行后，会在 `output/` 目录下生成带有时间戳的 JSON 文件，例如 `maze_layout_202401031530.json`。
+*   **日志**: 控制台会打印生成过程，包括起点选择、生成进度、死路回溯以及最终的难度统计。
 
-## 输出格式
+#### 2. 可视化检阅
 
-生成的迷宫以JSON格式保存，包含：
-- 轨道名称和索引
-- 迷宫坐标系位置
-- 世界坐标系位置（厘米）
-- 旋转角度
-- 最终难度值
+1.  使用浏览器（推荐 Chrome 或 Edge）打开 `render_maze.html`。
+2.  找到生成的 JSON 文件（在 `output/` 文件夹中）。
+3.  **拖拽** JSON 文件到页面中央的虚线框内。
 
-## 技术特性
+**操作方式**:
+*   **左键拖拽**: 旋转视角
+*   **右键拖拽**: 平移视角
+*   **滚轮**: 缩放
+*   **颜色含义**: 
+    *   🟩 **绿色**: 低难度区域
+    *   🟥 **红色**: 高难度区域
+    *   🔴 **红色小球**: 未连接的开放出口（Dead Ends 或待扩展接口）
 
-- **坐标系统**: 支持逻辑单元到世界坐标的转换
-- **碰撞检测**: 确保轨道不重叠
-- **回溯算法**: 处理生成失败的情况
-- **难度平衡**: 动态调整轨道难度
-- **类型分类**: 自动分类不同类型的轨道
+## ⚙️ 配置说明 (Configuration)
 
-## 依赖要求
+生成器依赖 `rail_config.csv` 来定义可用的轨道零件。该文件通常由 UE5 编辑器导出，包含以下关键信息：
 
-- Python 3.7+
-- 标准库模块：csv, json, random, pathlib, dataclasses
+*   **RowName**: 轨道的唯一标识符（通常包含尺寸信息，如 `_X1_Y1_Z1`）。
+*   **Diff_Base / Difficulty**: 该轨道的基础难度系数。
+*   **SizeX/Y/Z**: 轨道的逻辑占用尺寸（Grid Unit）。
+*   **Exit_Array / Exits**: 轨道出口的位置和旋转信息。
+*   **Type**: 轨道类型（Start, End, Normal）。
 
-## 许可证
+## 🧠 算法原理 (Algorithm)
 
-本项目遵循开源许可证，详见LICENSE文件。
+本项目采用 **难度驱动的生长算法 (Difficulty-Driven Growth)**。
 
+1.  **初始化**: 随机放置一个 Start 轨道，将其出口加入 `OpenList`。
+2.  **生长循环**:
+    *   从 `OpenList` 中取出一个可用接口。
+    *   根据当前累计难度决定生成策略（正常生长 vs 寻找终点）。
+    *   随机选择一个适配的轨道零件。
+    *   进行 **碰撞检测** (AABB) 和 **边界检查**。
+    *   如果放置成功，计算新难度并将其新出口加入 `OpenList`。
+3.  **终结**: 当累计难度达到设定阈值 (`TARGET_DIFFICULTY`) 时，强制尝试放置 End 轨道。
+
+> 详细的逻辑流程图请查阅 [pseudo.md](pseudo.md)。
+
+## 📄 输出格式 (Output Format)
+
+生成的 JSON 文件包含以下核心字段：
+
+*   **MapMeta**: 地图元数据（种子、难度、边界等）。
+*   **Rail**: 放置的轨道列表。
+    *   `Index`: 全局唯一索引。
+    *   `Name`: 对应 CSV 中的 RowName。
+    *   `Pos_Abs`: 物理世界坐标 (cm)。
+    *   `Pos_Rev`: 逻辑网格坐标 (grid)。
+    *   `Rot_Index`: 旋转索引 (0-3, 对应 0°-270°)。
+    *   `Prev_Index` / `Next_Index`: 链表结构的连接关系。
+
+## 🤝 贡献 (Contributing)
+
+欢迎提交 Issue 或 Pull Request 来改进算法效率或增加新功能。
+
+## 📜 许可证 (License)
+
+[MIT License](LICENSE)

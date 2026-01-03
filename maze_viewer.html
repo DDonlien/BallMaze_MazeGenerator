@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Maze Viewer V2</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #222; color: #fff; font-family: monospace; }
+        #ui { position: absolute; top: 10px; left: 10px; padding: 15px; background: rgba(0,0,0,0.85); border-radius: 8px; border: 1px solid #444; }
+        #dropzone { border: 2px dashed #666; padding: 30px; text-align: center; cursor: pointer; color: #aaa; }
+        #dropzone.hover { border-color: #0f0; background: #333; color: #fff; }
+        #stats { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="ui">
+        <h3>Maze Inspector V2</h3>
+        <div id="dropzone">Drop 'generated_maze_v2.json' here</div>
+        <div id="stats">Ready</div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 修正 3.1: 比例 16cm
+        const GRID_SCALE = 16.0;
+        // 迷宫边界 (需与 Python MAZE_BOUNDS 保持一致)
+        const MAZE_BOUNDS = { x: 4, y: 4, z: 1 };
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+
+        // Debug Grid (每格 16 单位) - on XY plane
+        const gridSize = 3200; // 足够大的范围，且是 16 的倍数
+        const gridDivisions = gridSize / GRID_SCALE;
+        const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x222222);
+        gridHelper.rotation.x = Math.PI / 2;
+        // Shift grid so (0,0,0) is center of a cell
+        gridHelper.position.set(GRID_SCALE/2, GRID_SCALE/2, 0);
+        scene.add(gridHelper);
+        const axesHelper = new THREE.AxesHelper(50);
+        // UE (Left-Handed) Y is Right. Three.js (Right-Handed) Y is Up (or Left if Z-up).
+        // We mapped UE +Y to Three -Y to preserve geometry.
+        // So we invert the AxesHelper Y so the Green arrow points to UE +Y (Logical Right).
+        axesHelper.scale.set(1, -1, 1);
+        scene.add(axesHelper);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
+        camera.up.set(0, 0, 1); // Z-up
+        camera.position.set(100, -100, 100); // Adjust default view
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        const light = new THREE.DirectionalLight(0xffffff, 1.2);
+        light.position.set(50, 200, 100);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+        // Drag & Drop
+        const dz = document.getElementById('dropzone');
+        dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('hover'); };
+        dz.ondragleave = () => dz.classList.remove('hover');
+        dz.ondrop = (e) => {
+            e.preventDefault();
+            dz.classList.remove('hover');
+            const file = e.dataTransfer.files[0];
+            const reader = new FileReader();
+            reader.onload = (ev) => parseMaze(ev.target.result);
+            reader.readAsText(file);
+        };
+
+        function parseMaze(jsonStr) {
+            try {
+                const data = JSON.parse(jsonStr);
+                buildScene(data);
+            } catch (err) {
+                alert("JSON Error: " + err);
+            }
+        }
+
+        function buildScene(data) {
+            // Cleanup
+            const toRemove = [];
+            scene.traverse(c => { if(c.isGroup) toRemove.push(c); });
+            toRemove.forEach(c => scene.remove(c));
+
+            const root = new THREE.Group();
+            const rails = data.Rail;
+
+            document.getElementById('stats').innerHTML = 
+                `Level: ${data.MapMeta.LevelName}<br>` +
+                `Count: ${data.MapMeta.RailCount}<br>` +
+                `<span style="color:#0f0">●</span> Connected<br>` +
+                `<span style="color:#f00">●</span> Open Exit<br>` + 
+                `<span style="color:#00ffff">●</span> Start <span style="color:#ff00ff">●</span> End <span style="color:#ffff00">●</span> CP`;
+
+            // 0. Boundary Box (Dashed)
+            // Bounds are indices, e.g. 4 means -4 to +4. 
+            // Blocks are centered at index * 16.
+            // Boundary should be at edge of blocks: (index * 16) +/- 8.
+            const half = GRID_SCALE / 2;
+            const minX = -MAZE_BOUNDS.x * GRID_SCALE - half;
+            const maxX =  MAZE_BOUNDS.x * GRID_SCALE + half;
+            const minY = -MAZE_BOUNDS.y * GRID_SCALE - half;
+            const maxY =  MAZE_BOUNDS.y * GRID_SCALE + half;
+            const minZ = -MAZE_BOUNDS.z * GRID_SCALE - half;
+            const maxZ =  MAZE_BOUNDS.z * GRID_SCALE + half;
+
+            const boxGeo = new THREE.BoxGeometry(maxX - minX, maxY - minY, maxZ - minZ);
+            const edges = new THREE.EdgesGeometry(boxGeo);
+            const line = new THREE.LineSegments(edges, new THREE.LineDashedMaterial({ color: 0x666666, dashSize: 4, gapSize: 2 }));
+            line.computeLineDistances();
+            line.position.set((minX + maxX)/2, (minY + maxY)/2, (minZ + maxZ)/2);
+            root.add(line);
+
+            rails.forEach(r => {
+                // 1. Box Mesh (Size_Rev * 16)
+                const sx = r.Size_Rev.x * GRID_SCALE;
+                const sy = r.Size_Rev.y * GRID_SCALE;
+                const sz = r.Size_Rev.z * GRID_SCALE;
+
+                const geo = new THREE.BoxGeometry(sx - 1, sy - 1, sz - 1); // -1 留缝隙
+                
+                // Color Logic
+                let color = 0x888888;
+                const rid = r.Rail_ID.toLowerCase();
+                
+                if (rid.includes("start")) color = 0x00ffff; // Cyan for Start
+                else if (rid.includes("end")) color = 0xff00ff; // Magenta for End
+                else if (rid.includes("checkpoint")) color = 0xffff00; // Yellow for Checkpoint
+                else {
+                     // Normal: Diff Gradient
+                     const hue = Math.max(0, 0.35 - (r.Diff_Act / 150.0) * 0.35); // Green -> Red
+                     color = new THREE.Color().setHSL(hue, 0.8, 0.5);
+                }
+
+                const mat = new THREE.MeshLambertMaterial({ color: color, transparent: true, opacity: 0.9 });
+                const mesh = new THREE.Mesh(geo, mat);
+
+                // Position (Pos_Abs is Pivot/Center of the first block)
+                // UE Coordinate System (Left Handed: X=Fwd, Y=Right, Z=Up) to Three.js (Right Handed Z-up: X=Right, Y=Up? No. Custom.)
+                // To align: X=Fwd, -Y=Right (since Three Y is Left in RH Z-up relative to X), Z=Up.
+                // We invert Y coordinate.
+                const cx = r.Pos_Abs.x + (sx - GRID_SCALE)/2;
+                const cy = -(r.Pos_Abs.y + (sy - GRID_SCALE)/2); // Invert Y
+                const cz = r.Pos_Abs.z + (sz - GRID_SCALE)/2;
+
+                mesh.position.set(cx, cy, cz);
+                
+                // Rotation (Z-axis is Up)
+                // UE Yaw: +90 is Right (+Y).
+                // Here Y is inverted (-Y). So Right is -Y.
+                // In RH Z-up, +RotZ is CCW (X->Y). X(Fwd) -> Y(Left).
+                // We want to rotate to Right (-Y). So we need negative rotation (CW).
+                // So +90 UE -> -90 Three.
+                mesh.rotation.z = -r.Rot_Abs.y * (Math.PI / 180);
+
+                root.add(mesh);
+
+                // 1.1 Arrows & Labels
+                const centerPos = new THREE.Vector3(cx, cy, cz);
+                
+                // (A) Entrance Arrow (From Previous)
+                if (r.Prev_Index !== -1) {
+                    const prev = rails.find(x => x.Rail_Index === r.Prev_Index);
+                    if (prev) {
+                        // Find connection
+                        const connectedExit = prev.Exit.find(e => e.TargetInstanceID === r.Rail_Index);
+                        if (connectedExit) {
+                            // Entrance Pos = Connected Exit Pos (Invert Y)
+                            const entPos = new THREE.Vector3(connectedExit.Exit_Pos_Abs.x, -connectedExit.Exit_Pos_Abs.y, connectedExit.Exit_Pos_Abs.z);
+                            // Dir = Exit Dir of Prev (Invert Y logic handled in getDirVector)
+                            const entDir = getDirVector(connectedExit.Exit_Dir_Abs);
+                            
+                            // Arrow Origin at Entrance, Pointing In (Dir)
+                            const arrowEnt = createThickArrow(entDir, entPos, GRID_SCALE * 0.8, 0x00ff00);
+                            root.add(arrowEnt);
+                        }
+                    }
+                }
+
+                // (B) Exit Arrows (Own Exits)
+                r.Exit.forEach(ex => {
+                    if (!ex.Exit_Pos_Abs) return;
+                    // Invert Y for pos
+                    const exPos = new THREE.Vector3(ex.Exit_Pos_Abs.x, -ex.Exit_Pos_Abs.y, ex.Exit_Pos_Abs.z);
+                    const exDir = getDirVector(ex.Exit_Dir_Abs);
+                    
+                    // User wants arrow "inside" the block.
+                    // Shift origin back by length so tip touches the exit.
+                    const arrowLen = GRID_SCALE * 0.8;
+                    const origin = exPos.clone().sub(exDir.clone().multiplyScalar(arrowLen));
+                    
+                    const arrowEx = createThickArrow(exDir, origin, arrowLen, 0xff0000);
+                    root.add(arrowEx);
+                });
+
+                // 1.2 Index Label (Center)
+                const sprite = createTextSprite(`#${r.Rail_Index}`);
+                sprite.position.copy(centerPos);
+                // sprite.position.z += sz/2 + 2; 
+                root.add(sprite);
+
+                // 2. Exits (Small Spheres)
+                r.Exit.forEach(ex => {
+                    if (!ex.Exit_Pos_Abs) return;
+                    const eGeo = new THREE.SphereGeometry(0.7);
+                    const eMat = new THREE.MeshBasicMaterial({ color: ex.IsConnected ? 0x00ff00 : 0xff0000 });
+                    const eMesh = new THREE.Mesh(eGeo, eMat);
+                    eMesh.position.set(ex.Exit_Pos_Abs.x, -ex.Exit_Pos_Abs.y, ex.Exit_Pos_Abs.z); // Invert Y
+                    root.add(eMesh);
+                });
+
+                // 3. Topology Lines
+                if (r.Prev_Index !== -1) {
+                    const prev = rails.find(x => x.Rail_Index === r.Prev_Index);
+                    if (prev) {
+                        const pts = [
+                            new THREE.Vector3(prev.Pos_Abs.x, -prev.Pos_Abs.y, prev.Pos_Abs.z), // Invert Y
+                            new THREE.Vector3(r.Pos_Abs.x, -r.Pos_Abs.y, r.Pos_Abs.z) // Invert Y
+                        ];
+                        const lGeo = new THREE.BufferGeometry().setFromPoints(pts);
+                        const lMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.5, transparent: true });
+                        root.add(new THREE.Line(lGeo, lMat));
+                    }
+                }
+            });
+
+            scene.add(root);
+        }
+
+        function createThickArrow(dir, origin, length, color) {
+            const arrowGroup = new THREE.Group();
+            
+            const headLen = length * 0.3;
+            const shaftLen = length - headLen;
+            const shaftRadius = 1.5; 
+            const headRadius = shaftRadius * 2.5;
+
+            const mat = new THREE.MeshLambertMaterial({ color: color });
+            
+            // Shaft
+            const shaftGeo = new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLen, 12);
+            const shaftMesh = new THREE.Mesh(shaftGeo, mat);
+            shaftMesh.position.y = shaftLen / 2;
+            arrowGroup.add(shaftMesh);
+            
+            // Head
+            const headGeo = new THREE.ConeGeometry(headRadius, headLen, 12);
+            const headMesh = new THREE.Mesh(headGeo, mat);
+            headMesh.position.y = shaftLen + headLen / 2;
+            arrowGroup.add(headMesh);
+            
+            // Orientation
+            arrowGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+            arrowGroup.position.copy(origin);
+            
+            return arrowGroup;
+        }
+
+        function getDirVector(dirStr) {
+            // UE: +Y is Right.
+            // Three (Y-flipped): Right is -Y.
+            if (dirStr === "+X") return new THREE.Vector3(1, 0, 0);
+            if (dirStr === "-X") return new THREE.Vector3(-1, 0, 0);
+            if (dirStr === "+Y") return new THREE.Vector3(0, -1, 0); // Flip Y
+            if (dirStr === "-Y") return new THREE.Vector3(0, 1, 0);  // Flip Y
+            return new THREE.Vector3(0, 0, 1);
+        }
+
+        function createTextSprite(message) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 256;
+            ctx.font = "Bold 100px Arial";
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 8;
+            ctx.strokeText(message, 128, 128);
+            ctx.fillText(message, 128, 128);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(12, 12, 1);
+            return sprite;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+        
+        window.onresize = () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        };
+    </script>
+</body>
+</html>
