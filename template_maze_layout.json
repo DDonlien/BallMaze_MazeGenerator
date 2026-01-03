@@ -1,0 +1,35 @@
+{
+    "MapMeta": {
+        "LevelName": "Dungeon_01",
+        "RailCount": 50
+    },
+    "Rail": 
+    [
+        {
+            "Rail_Index": 105,
+            "Rail_ID": "BP_Straight_F_X1_Y1_Z1_Rail",
+            "Pos_Abs": { "x": 1500.0, "y": -500.0, "z": 0.0 },
+            "Rot_Abs": { "p": 0.0, "y": 90.0, "r": 180.0 },
+            "Size_Rev": { "x": 1, "y": 1, "z": 1 },
+            "Diff_Base": 12.5,
+            "Diff_Act": 25.5,
+            "Prev_Index": 104,
+            "Next_Index": [ 106, 108 ],
+            "Exit": 
+            [
+                {
+                    "Index": 0,
+                        "Exit_Pos_Abs": { "x": 2000.0, "y": -500.0, "z": 0.0 },
+                        "IsConnected": true,
+                        "TargetInstanceID": 106
+                },
+                {
+                    "Index": 1,
+                        "Exit_Pos_Abs": { "x": 2000.0, "y": 500.0, "z": 0.0 },
+                        "IsConnected": false,
+                        "TargetInstanceID": null
+                }
+            ]
+        }
+    ]
+}
