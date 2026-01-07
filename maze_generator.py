@@ -9,9 +9,7 @@ from typing import List, Dict, Set, Tuple, Optional
 # 1. 核心配置与常量
 # ==========================================
 
-# 修正 3.1: 比例关系 1 BLOCK : 16 CM
-GRID_TO_WORLD_SCALE = 16.0 
-
+# 定义常量
 @dataclass
 class Vector3:
     x: int = 0
@@ -19,7 +17,12 @@ class Vector3:
     z: int = 0
 
     def to_dict(self): return {"x": self.x, "y": self.y, "z": self.z}
-    def to_world_dict(self): return {"x": float(self.x * GRID_TO_WORLD_SCALE), "y": float(self.y * GRID_TO_WORLD_SCALE), "z": float(self.z * GRID_TO_WORLD_SCALE)}
+    def to_world_dict(self): 
+        return {
+            "x": float(round(self.x * GRID_TO_WORLD_SCALE, 8)), 
+            "y": float(round(self.y * GRID_TO_WORLD_SCALE, 8)), 
+            "z": float(round(self.z * GRID_TO_WORLD_SCALE, 8))
+        }
     def as_tuple(self): return (self.x, self.y, self.z)
     
     # 向量加法
@@ -35,25 +38,66 @@ class Vector3:
             rx, ry = -ry, rx
         return Vector3(rx, ry, self.z)
 
-# 修正 1.3: 迷宫最大尺寸 (逻辑单位)
+# ==========================================
+# 1.5 辅助计算逻辑 (Helper Logic)
+# ==========================================
+
+def calculate_occupied_cells(rail_id: str, pos: Vector3, size: Vector3, rot_idx: int) -> List[Tuple[int, int, int]]:
+    """
+    Calculate occupied cells for a rail based on its ID, Position, Size, and Rotation.
+    Handles special cases for Downward rails (FD, D90) which occupy cells downwards from the pivot.
+    """
+    cells = []
+    
+    # Check for Downward types
+    # FD: Forward Down (Bump)
+    # D90: Curve Down
+    # _D_: Generic Down check if naming convention is consistent
+    is_downward = "_FD_" in rail_id or "_D90_" in rail_id or "_D_" in rail_id
+    
+    # Determine Z range
+    # If Normal/Up: 0 to SizeZ - 1
+    # If Downward: 0 to -(SizeZ - 1)  (i.e., 0, -1, -2...)
+    
+    for lx in range(size.x):
+        for ly in range(size.y):
+            for lz in range(size.z):
+                # Calculate local Z offset
+                # If Downward, we extend DOWN from pivot (0). 
+                local_z = -lz if is_downward else lz
+                
+                # Local point before rotation
+                vec = Vector3(lx, ly, local_z)
+                rot_vec = vec.rotate_z(rot_idx)
+                
+                # Add to Global Pos
+                gx = pos.x + rot_vec.x
+                gy = pos.y + rot_vec.y
+                gz = pos.z + rot_vec.z
+                
+                cells.append((gx, gy, gz))
+                
+    return cells
+
+# 定义比例关系 1 BLOCK : 16 CM
+GRID_TO_WORLD_SCALE = 16.0 
+
+# 迷宫最大尺寸 (逻辑单位)
 MAZE_BOUNDS = Vector3(4, 4, 1) # X, Y, Z (扩大边界以避免早期死路)
 
-# 修正 4: 目标难度
+# 目标难度
 TARGET_DIFFICULTY = 15.0
+
 # 目标 Checkpoint 数量
 TARGET_CHECKPOINTS = 0
 
-# ==========================================
-# 边界计算模式选项
-# ==========================================
+# 选择边界计算模式选项
 # 模式0: 静态边界（默认）。迷宫必须在 (-MAZE_BOUNDS, +MAZE_BOUNDS) 的绝对坐标范围内生成。
-# 模式1: 动态边界。迷宫的“尺寸”不能超过 (MAZE_BOUNDS * 2)，但绝对位置可以浮动。
-#       相当于迷宫可以在无限空间中生长，只要其 bounding box 不超过设定的大小。
-#       生成完成后，会自动将迷宫移动到原点中心。
-BOUNDARY_MODE = 1
+# 模式1: 动态边界。迷宫的“尺寸”不能超过 (MAZE_BOUNDS * 2)，但绝对位置可以浮动。相当于迷宫可以在无限空间中生长，只要其 bounding box 不超过设定的大小。生成完成后，会自动将迷宫移动到原点中心。
+BOUNDARY_MODE = 0
 
 # ==========================================
-# 2. 数据结构
+# 2. 定义数据结构
 # ==========================================
 
 @dataclass
@@ -93,6 +137,7 @@ class RailInstance:
     # 存储出口连接状态 (用于 JSON 导出)
     exit_status: List[dict] = field(default_factory=list) 
     forbidden_siblings: Set[str] = field(default_factory=set) # 记录该节点生成时被禁用的兄弟节点 
+    occupied_cells_rev: List[Vector3] = field(default_factory=list) # 存储实际占用的逻辑网格列表 
 
 # ==========================================
 # 3. 解析与配置加载
@@ -160,19 +205,23 @@ def load_config(csv_path):
                 logic_pos = Vector3(gx, gy, gz)
                 
                 # 解析 BaseRot
-                rot = 0
+                rot_idx_offset = 0
+                local_rot = {'p': 0.0, 'y': 0.0, 'r': 0.0}
+                
                 if i < len(rot_matches):
-                    _, ry, _ = map(float, rot_matches[i].groups())
+                    rp, ry, rr = map(float, rot_matches[i].groups())
+                    local_rot = {'p': rp, 'y': ry, 'r': rr}
+                    
                     rot_deg = int(ry)
-                    # Normalize to 0-3 index
-                    # 90 -> 1, 180 -> 2, -90 -> 3 (270)
-                    rot = int(rot_deg // 90) % 4
+                    # Normalize to 0-3 index for logic flow
+                    rot_idx_offset = int(rot_deg // 90) % 4
                 
                 # 解析 SpinDiff
                 
                 exits.append({
                     "Pos": logic_pos,
-                    "RotOffset": rot,
+                    "RotOffset": rot_idx_offset,
+                    "LocalRot": local_rot,
                     "SpinDiff": [1.0, 1.0, 1.0, 1.0]
                 })
 
@@ -189,10 +238,13 @@ def load_config(csv_path):
                         logic_pos = Vector3(int(px), int(py), int(pz))
                         
                         rot = int(row[rot_col]) if pd.notna(row[rot_col]) else 0
+                        # 旧版只支持 Yaw 旋转
+                        local_rot = {'p': 0.0, 'y': float(rot * 90), 'r': 0.0}
                         
                         exits.append({
                             "Pos": logic_pos,
                             "RotOffset": rot,
+                            "LocalRot": local_rot,
                             # Default SpinDiff to allow all rotations with weight 1.0
                             "SpinDiff": [1.0, 1.0, 1.0, 1.0] 
                         })
@@ -235,59 +287,66 @@ class MazeGenerator:
         
         self.backtrack_count = 0
 
-    def is_in_bounds(self, pos: Vector3, size: Vector3):
+    def is_in_bounds(self, pos: Vector3, occupied_cells: List[Tuple[int, int, int]]):
         # 修正 3.2: 检查迷宫范围
+        
+        # 计算当前组件的 Bounds
+        xs = [c[0] for c in occupied_cells]
+        ys = [c[1] for c in occupied_cells]
+        zs = [c[2] for c in occupied_cells]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        min_z, max_z = min(zs), max(zs)
         
         if BOUNDARY_MODE == 0:
             # 模式0: 静态边界检查
             # 范围是 [-Bound, Bound] (inclusive)
-            if pos.x < -MAZE_BOUNDS.x or pos.x + size.x - 1 > MAZE_BOUNDS.x: return False
-            if pos.y < -MAZE_BOUNDS.y or pos.y + size.y - 1 > MAZE_BOUNDS.y: return False
-            if pos.z < -MAZE_BOUNDS.z or pos.z + size.z - 1 > MAZE_BOUNDS.z: return False 
+            if min_x < -MAZE_BOUNDS.x or max_x > MAZE_BOUNDS.x: return False
+            if min_y < -MAZE_BOUNDS.y or max_y > MAZE_BOUNDS.y: return False
+            if min_z < -MAZE_BOUNDS.z or max_z > MAZE_BOUNDS.z: return False 
             return True
             
         elif BOUNDARY_MODE == 1:
             # 模式1: 动态边界检查 (检查 Bounding Box 大小)
-            # 计算加入当前新 Rail 后的整体 Min/Max
+            # Span Check Only
             
-            # 1. 当前已有的 Bounding Box
-            if not self.placed_rails:
-                # 只有当前这一个，肯定在范围内（假设单个 Rail 不会超过 Bounds * 2）
-                # 但为了严谨，还是检查一下 size 是否超过 2*Bounds
-                # Bound 是半长，所以全长是 Bound*2 + 1 (如果含0) 或者 Bound*2
-                # 这里我们沿用 Mode 0 的逻辑: -Bound 到 +Bound，跨度是 2*Bound + 1
-                
-                max_span_x = MAZE_BOUNDS.x * 2 + 1
-                max_span_y = MAZE_BOUNDS.y * 2 + 1
-                max_span_z = MAZE_BOUNDS.z * 2 + 1
-                
-                if size.x > max_span_x or size.y > max_span_y or size.z > max_span_z:
-                    return False
-                return True
+            # 1. 计算加入新组件后的 Global Bounds
+            if not hasattr(self, 'global_bounds'):
+                # Init with placed rails if any (should cover restart case)
+                # But easiest is to maintain it in mark_occupied.
+                # Here we just check "If we add this, does it exceed?"
+                # We need current bounds.
+                # If placed_rails is empty, current is empty.
+                curr_min_x, curr_max_x = float('inf'), float('-inf')
+                curr_min_y, curr_max_y = float('inf'), float('-inf')
+                curr_min_z, curr_max_z = float('inf'), float('-inf')
+            else:
+                curr_min_x, curr_max_x = self.global_bounds[0], self.global_bounds[1]
+                curr_min_y, curr_max_y = self.global_bounds[2], self.global_bounds[3]
+                curr_min_z, curr_max_z = self.global_bounds[4], self.global_bounds[5]
+            
+            if self.placed_rails and curr_min_x == float('inf'):
+                 # Fallback if global_bounds not synced (should not happen with new logic)
+                 # Re-calc from all placed
+                 pass
 
-            # 获取当前所有 Rail 的边界 (这步可能需要优化，如果太慢可以缓存)
-            # 这里的 pos_rev 是左下角
-            curr_min_x = min(r.pos_rev.x for r in self.placed_rails)
-            curr_max_x = max(r.pos_rev.x + (r.size_rev.x if r.rot_index % 2 == 0 else r.size_rev.y) - 1 for r in self.placed_rails)
+            # Update with new candidate
+            # If current is empty (first block), just use new
+            if curr_min_x == float('inf'):
+                new_min_x, new_max_x = min_x, max_x
+                new_min_y, new_max_y = min_y, max_y
+                new_min_z, new_max_z = min_z, max_z
+            else:
+                new_min_x = min(curr_min_x, min_x)
+                new_max_x = max(curr_max_x, max_x)
+                new_min_y = min(curr_min_y, min_y)
+                new_max_y = max(curr_max_y, max_y)
+                new_min_z = min(curr_min_z, min_z)
+                new_max_z = max(curr_max_z, max_z)
             
-            curr_min_y = min(r.pos_rev.y for r in self.placed_rails)
-            curr_max_y = max(r.pos_rev.y + (r.size_rev.y if r.rot_index % 2 == 0 else r.size_rev.x) - 1 for r in self.placed_rails)
-            
-            curr_min_z = min(r.pos_rev.z for r in self.placed_rails)
-            curr_max_z = max(r.pos_rev.z + r.size_rev.z - 1 for r in self.placed_rails)
-            
-            # 2. 加入新 Rail 后的边界
-            new_min_x = min(curr_min_x, pos.x)
-            new_max_x = max(curr_max_x, pos.x + size.x - 1)
-            
-            new_min_y = min(curr_min_y, pos.y)
-            new_max_y = max(curr_max_y, pos.y + size.y - 1)
-            
-            new_min_z = min(curr_min_z, pos.z)
-            new_max_z = max(curr_max_z, pos.z + size.z - 1)
-            
-            # 3. 检查尺寸是否超过允许范围
-            # 允许范围是 Mode 0 的跨度: [-B, B] -> span = 2*B + 1
+            # Check Span
+            # Span = Max - Min + 1
+            # Allowed = Bound * 2 + 1
             allowed_span_x = MAZE_BOUNDS.x * 2 + 1
             allowed_span_y = MAZE_BOUNDS.y * 2 + 1
             allowed_span_z = MAZE_BOUNDS.z * 2 + 1
@@ -296,78 +355,62 @@ class MazeGenerator:
             if (new_max_y - new_min_y + 1) > allowed_span_y: return False
             if (new_max_z - new_min_z + 1) > allowed_span_z: return False
             
-            return True
+            return False
             
         return False
 
-    def is_colliding(self, pos: Vector3, size: Vector3, rot_idx: int):
-        # 计算旋转后的实际占地尺寸
-        # 如果旋转 90 (1) 或 270 (3)，X 和 Y 尺寸互换
-        actual_size_x = size.x if rot_idx % 2 == 0 else size.y
-        actual_size_y = size.y if rot_idx % 2 == 0 else size.x
-        actual_size_z = size.z
+    def is_colliding(self, occupied_cells: List[Tuple[int, int, int]]):
+        """
+        检查给定的占用格子列表是否与已占用的格子冲突
+        """
+        for cell in occupied_cells:
+            if cell in self.occupied_cells:
+                return True, self.occupied_cells[cell]
+        return False, None
 
-        for x in range(pos.x, pos.x + actual_size_x):
-            for y in range(pos.y, pos.y + actual_size_y):
-                for z in range(pos.z, pos.z + actual_size_z):
-                    if (x, y, z) in self.occupied_cells:
-                        return True, self.occupied_cells[(x, y, z)]
-        return False, Vector3(actual_size_x, actual_size_y, actual_size_z)
+    def mark_occupied(self, cells: List[Tuple[int, int, int]], rail_index: int):
+        # Update global bounds if Mode 1
+        if BOUNDARY_MODE == 1:
+            if not hasattr(self, 'global_bounds'):
+                self.global_bounds = [float('inf'), float('-inf'), float('inf'), float('-inf'), float('inf'), float('-inf')]
+            
+            xs = [c[0] for c in cells]
+            ys = [c[1] for c in cells]
+            zs = [c[2] for c in cells]
+            
+            self.global_bounds[0] = min(self.global_bounds[0], min(xs))
+            self.global_bounds[1] = max(self.global_bounds[1], max(xs))
+            self.global_bounds[2] = min(self.global_bounds[2], min(ys))
+            self.global_bounds[3] = max(self.global_bounds[3], max(ys))
+            self.global_bounds[4] = min(self.global_bounds[4], min(zs))
+            self.global_bounds[5] = max(self.global_bounds[5], max(zs))
 
-    def mark_occupied(self, pos: Vector3, actual_size: Vector3, rail_index: int):
-        for x in range(pos.x, pos.x + actual_size.x):
-            for y in range(pos.y, pos.y + actual_size.y):
-                for z in range(pos.z, pos.z + actual_size.z):
-                    self.occupied_cells[(x, y, z)] = rail_index
+        for cell in cells:
+            self.occupied_cells[cell] = rail_index
 
     def place_rail(self, rail_id: str, connector: OpenConnector = None, is_start=False):
-        cfg = self.config_map[rail_id]
-        
-        # 确定位置和旋转
-        if is_start:
-            # 修正 1.3: 起点随机范围放置
-            half_x, half_y = MAZE_BOUNDS.x // 2, MAZE_BOUNDS.y // 2
-            # 确保范围有效
-            range_x = max(1, half_x - 5)
-            range_y = max(1, half_y - 5)
-            start_x = random.randint(-range_x, range_x)
-            start_y = random.randint(-range_y, range_y)
-            
-            pos = Vector3(start_x, start_y, 0)
-            rot = 0 # 默认朝向
-            diff_base = cfg.diff_base # 起点使用 Config 定义的难度
-            ratio = 1.0
-            prev_idx = -1
-            print(f"-> 尝试放置 Start [{rail_id}] at Pos={pos.as_tuple()}")
-        else:
-            # 这里需要外部循环传入确定的 rot 和 ratio
-            # 为了保持 place_rail 接口简单，我们假设 connector 已经被拆解或者外部传入参数
-            # 但这里我们调整 place_rail 接口会比较大，
-            # 我们可以保留 place_rail 做核心检测，参数改一下
-            pass
-            
-        # 这里的重构逻辑：
-        # place_rail 不应该再负责从 connector 拆解 rot，而是应该接受明确的 pos, rot
-        # 所以我们需要修改 place_rail 的签名，或者在内部处理
-        
-        # 临时方案：is_start 特殊处理，非 start 时，我们期望调用者已经算好了 pos, rot
-        # 但原来的调用是 self.place_rail(cand_id, connector)
-        # 我们改成 self.place_rail(cand_id, pos, rot, diff_base, ratio, prev_idx)
+        # ... (Same as before, mainly place_rail_v2 is used) ...
+        # But we need to update the is_start block too
         pass
 
     def place_rail_v2(self, rail_id: str, pos: Vector3, rot: int, diff_base_acc: float, ratio: float, prev_idx: int):
         cfg = self.config_map[rail_id]
         
-        # 检查占用和边界
-        colliding, result_data = self.is_colliding(pos, cfg.size_rev, rot)
+        # 1. 计算预期占用空间 (Decoupled Step 1)
+        # get_occupied_cells returns List[Tuple[int, int, int]]
+        expected_cells_tuples = calculate_occupied_cells(rail_id, pos, cfg.size_rev, rot)
+        
+        # 2. 检查占用 (Decoupled Step 2)
+        colliding, conflict_id = self.is_colliding(expected_cells_tuples)
         if colliding: 
-            return f"Collision with Rail {result_data}"
+            return f"Collision with Rail {conflict_id}"
             
-        if not self.is_in_bounds(pos, result_data): 
+        # 3. 检查边界 (Decoupled Step 3)
+        if not self.is_in_bounds(pos, expected_cells_tuples): 
             return "OutOfBounds"
         
-        actual_size = result_data
-
+        # 4. 成功放置 -> 实例化
+        
         # 计算难度
         # 修正 4: 难度公式应用
         current_diff = (1.0 + diff_base_acc * 0.1) * cfg.diff_base * ratio
@@ -376,6 +419,10 @@ class MazeGenerator:
         idx = self.global_index_counter
         self.global_index_counter += 1
         
+        # Convert tuples back to Vector3 for storage if needed, or just store tuples?
+        # RailInstance defines occupied_cells_rev as List[Vector3]
+        occupied_cells_vecs = [Vector3(c[0], c[1], c[2]) for c in expected_cells_tuples]
+        
         instance = RailInstance(
             rail_index=idx,
             rail_id=rail_id,
@@ -383,14 +430,15 @@ class MazeGenerator:
             rot_index=rot,
             size_rev=cfg.size_rev, # 存原始逻辑尺寸
             diff_act=current_diff,
-            prev_index=prev_idx
+            prev_index=prev_idx,
+            occupied_cells_rev=occupied_cells_vecs # Store here
         )
         
         # 初始化出口状态
         instance.exit_status = [{"Index": i, "IsConnected": False, "TargetID": -1, "WorldPos": None} for i in range(len(cfg.exits_logic))]
 
-        # 更新全局
-        self.mark_occupied(pos, actual_size, idx)
+        # 更新全局占用表
+        self.mark_occupied(expected_cells_tuples, idx)
         self.placed_rails.append(instance)
         self.current_total_difficulty += current_diff
 
@@ -480,19 +528,19 @@ class MazeGenerator:
                     self.current_total_difficulty -= last_rail.diff_act
                     
                     # 2. Unmark occupied cells
-                    # Re-calc size for unmark
-                    sz = last_rail.size_rev
-                    rot_idx = last_rail.rot_index
-                    actual_size_x = sz.x if rot_idx % 2 == 0 else sz.y
-                    actual_size_y = sz.y if rot_idx % 2 == 0 else sz.x
-                    actual_size_z = sz.z
+                    # Re-calc occupied cells for unmark
+                    cells_to_remove = calculate_occupied_cells(last_rail.rail_id, last_rail.pos_rev, last_rail.size_rev, last_rail.rot_index)
                     
-                    pos = last_rail.pos_rev
-                    for x in range(pos.x, pos.x + actual_size_x):
-                        for y in range(pos.y, pos.y + actual_size_y):
-                            for z in range(pos.z, pos.z + actual_size_z):
-                                if (x, y, z) in self.occupied_cells and self.occupied_cells[(x,y,z)] == last_rail.rail_index:
-                                    del self.occupied_cells[(x, y, z)]
+                    for cell in cells_to_remove:
+                        if cell in self.occupied_cells and self.occupied_cells[cell] == last_rail.rail_index:
+                            del self.occupied_cells[cell]
+                    
+                    # Update global bounds if needed?
+                    # Since we only grow bounds, shrinking is hard without full re-scan.
+                    # But for now we can leave bounds as max reached, or implement full re-scan if critical.
+                    # Given simple logic, let's leave global_bounds as "Max Extent Reached" which is safe (just looser check).
+                    # Or if accuracy needed, we can set flag to recompute later.
+
                     
                     # 3. Recover Parent Connector
                     # We need to find the parent and re-activate the exit
@@ -699,16 +747,11 @@ class MazeGenerator:
                                 self.current_total_difficulty -= placed_instance.diff_act
                                 
                                 # Unmark Occupied
-                                # Re-calc size for unmark
-                                sz = placed_instance.size_rev
-                                actual_sz_x = sz.x if final_rot % 2 == 0 else sz.y
-                                actual_sz_y = sz.y if final_rot % 2 == 0 else sz.x
-                                actual_sz_z = sz.z
-                                for x in range(placed_instance.pos_rev.x, placed_instance.pos_rev.x + actual_sz_x):
-                                    for y in range(placed_instance.pos_rev.y, placed_instance.pos_rev.y + actual_sz_y):
-                                        for z in range(placed_instance.pos_rev.z, placed_instance.pos_rev.z + actual_sz_z):
-                                            if (x,y,z) in self.occupied_cells and self.occupied_cells[(x,y,z)] == placed_instance.rail_index:
-                                                del self.occupied_cells[(x,y,z)]
+                                # Re-calc cells for unmark
+                                cells_to_remove = calculate_occupied_cells(placed_instance.rail_id, placed_instance.pos_rev, placed_instance.size_rev, final_rot)
+                                for cell in cells_to_remove:
+                                    if cell in self.occupied_cells and self.occupied_cells[cell] == placed_instance.rail_index:
+                                        del self.occupied_cells[cell]
                                 
                                 # Remove Fork's Exits from OpenList
                                 # They were added at the end of open_list
@@ -771,23 +814,53 @@ class MazeGenerator:
             # 取整偏移量 (保持 Grid 对齐)
             offset_x = -int(round(center_x))
             offset_y = -int(round(center_y))
-            # offset_z = -int(round(center_z)) # Z 轴通常从 0 开始，或者也归一化？ 假设保持 Z 相对位置，或者也归一化。通常迷宫在地平面，Z可能不需要动，或者归一化到底部为0？
-            # 用户的需求是“迷宫中央位置”，通常指 XY 平面。Z 轴如果归一化可能会导致埋地。暂只调整 XY。
+            # 修正 4.2: Mode 1 应该也归一化 Z 轴，确保迷宫垂直居中 (如果需要的话)
+            # 用户抱怨 Z=32 超出 static bound (24)。如果 Z span 是 3 (高 48)，centered 应该是 -24~24 左右。
+            # 如果不归一化 Z，Z 会一直向上生长。
+            # 这里启用 Z 归一化。
+            center_z = (min_z + max_z) / 2.0
+            offset_z = -int(round(center_z))
             
-            print(f"  -> Bounds: X[{min_x}, {max_x}], Y[{min_y}, {max_y}]")
-            print(f"  -> Center: ({center_x}, {center_y})")
-            print(f"  -> Applying Offset: ({offset_x}, {offset_y})")
+            print(f"  -> Bounds: X[{min_x}, {max_x}], Y[{min_y}, {max_y}], Z[{min_z}, {max_z}]")
+            print(f"  -> Center: ({center_x}, {center_y}, {center_z})")
+            print(f"  -> Applying Offset: ({offset_x}, {offset_y}, {offset_z})")
             
             # 3. 应用偏移
             for r in self.placed_rails:
                 r.pos_rev.x += offset_x
                 r.pos_rev.y += offset_y
-                # r.pos_rev.z += offset_z
+                r.pos_rev.z += offset_z
+                
+                # 同步更新 occupied_cells_rev
+                for cell in r.occupied_cells_rev:
+                    cell.x += offset_x
+                    cell.y += offset_y
+                    cell.z += offset_z
+
+        # 生成 Markdown Report
+        report_lines = []
+        report_lines.append("# Maze Generation Report")
+        report_lines.append(f"Target Diff: {TARGET_DIFFICULTY}, Mode: {BOUNDARY_MODE}")
+        report_lines.append("## Steps")
+        report_lines.append("| Step | Rail ID | Rev Pos (X,Y,Z) | Size | Rot | Occupied Cells (Rev) |")
+        report_lines.append("|---|---|---|---|---|---|")
 
         total_diff = 0.0
         json_rails = []
         for r in self.placed_rails:
             total_diff += r.diff_act
+            
+            # 计算占用空间 (Rev) 用于报告
+            # 这里 occupied_cells_rev 已经是归一化后的了 (Mode 1)
+            # occupied = self.get_occupied_cells_set(r.pos_rev, r.size_rev, r.rot_index)
+            # 使用存储的 cells
+            occupied = [c.as_tuple() for c in r.occupied_cells_rev]
+            # 格式化 occupied
+            # 排序
+            occupied.sort()
+            occ_str = "<br>".join([str(c) for c in occupied])
+            
+            report_lines.append(f"| {r.rail_index} | {r.rail_id} | {r.pos_rev.as_tuple()} | {r.size_rev.as_tuple()} | {r.rot_index} | {occ_str} |")
             
             # 计算物理坐标
             pos_abs = r.pos_rev.to_world_dict()
@@ -807,8 +880,8 @@ class MazeGenerator:
                 logic_offset = cfg.exits_logic[i]['Pos']
                 
                 # Exit 的绝对旋转索引 = (Rail旋转 + Exit相对旋转) % 4
-                exit_local_rot = cfg.exits_logic[i]['RotOffset']
-                exit_abs_rot_idx = (r.rot_index + exit_local_rot) % 4
+                exit_local_rot_idx = cfg.exits_logic[i]['RotOffset']
+                exit_abs_rot_idx = (r.rot_index + exit_local_rot_idx) % 4
                 
                 # 计算世界逻辑坐标
                 rotated_offset = logic_offset.rotate_z(r.rot_index)
@@ -817,8 +890,29 @@ class MazeGenerator:
                 world_phys_pos = world_logic_pos.to_world_dict()
                 
                 # Exit 详细属性
-                exit_rot_abs = {"p": 0.0, "y": float(exit_abs_rot_idx * 90.0), "r": 0.0}
-                exit_dir_abs = self.get_ue_dir_str(exit_abs_rot_idx)
+                # 计算绝对旋转 (Rot Abs)
+                # Yaw 受到 Rail 旋转的影响
+                local_rot = cfg.exits_logic[i]['LocalRot']
+                final_yaw = (float(r.rot_index * 90.0) + local_rot['y']) % 360.0
+                
+                # Pitch 和 Roll 认为是本地的，但在只有 Yaw 旋转的 Grid 系统中，Pitch 不受 Yaw 影响
+                # Roll 也不受 Yaw 影响 (围绕 Z 轴旋转不会改变 X/Y 轴的相对倾斜，只会改变指向)
+                exit_rot_abs = {
+                    "p": local_rot['p'],
+                    "y": final_yaw,
+                    "r": local_rot['r']
+                }
+                
+                # 计算绝对方向 (Dir Abs)
+                # 优先判断 Pitch (Up/Down)
+                p = local_rot['p']
+                if abs(p - 90.0) < 1.0:
+                    exit_dir_abs = "+Z" # Up
+                elif abs(p + 90.0) < 1.0 or abs(p - 270.0) < 1.0:
+                    exit_dir_abs = "-Z" # Down
+                else:
+                    # 否则使用 Yaw 判断水平方向
+                    exit_dir_abs = self.get_ue_dir_str(exit_abs_rot_idx)
                 
                 baked_exits.append({
                     "Index": i,
@@ -838,6 +932,7 @@ class MazeGenerator:
                 "Rot_Abs": rot_abs,
                 "Dir_Abs": dir_abs, # 新增
                 "Size_Rev": r.size_rev.to_dict(),
+                "Occupied_Cells_Rev": [c.to_dict() for c in r.occupied_cells_rev], # 新增输出
                 "Diff_Base": 0, # 这里略过，只看 Final
                 "Diff_Act": r.diff_act,
                 "Prev_Index": r.prev_index,
@@ -856,6 +951,11 @@ class MazeGenerator:
         with open(path, 'w') as f:
             json.dump(out_data, f, indent=4)
         print(f"Exported to {path}")
+
+        # Write Markdown Report
+        with open("maze_generation_report.md", "w") as f:
+            f.write("\n".join(report_lines))
+        print("Exported Report to maze_generation_report.md")
 
 # ==========================================
 # 5. 执行

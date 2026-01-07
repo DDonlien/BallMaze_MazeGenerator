@@ -5,10 +5,14 @@
     <title>Maze Viewer V2</title>
     <style>
         body { margin: 0; overflow: hidden; background: #222; color: #fff; font-family: monospace; }
-        #ui { position: absolute; top: 10px; left: 10px; padding: 15px; background: rgba(0,0,0,0.85); border-radius: 8px; border: 1px solid #444; }
-        #dropzone { border: 2px dashed #666; padding: 30px; text-align: center; cursor: pointer; color: #aaa; }
+        #ui { position: absolute; top: 10px; left: 10px; padding: 15px; background: rgba(0,0,0,0.85); border-radius: 8px; border: 1px solid #444; pointer-events: none; min-width: 250px; }
+        #dropzone { border: 2px dashed #666; padding: 30px; text-align: center; cursor: pointer; color: #aaa; pointer-events: auto; }
         #dropzone.hover { border-color: #0f0; background: #333; color: #fff; }
         #stats { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+        #info-content { margin-top: 15px; border-top: 1px solid #666; padding-top: 10px; display: none; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .info-label { color: #888; }
+        .info-val { color: #fff; font-weight: bold; text-align: right; }
     </style>
     <script type="importmap">
         {
@@ -24,6 +28,7 @@
         <h3>Maze Inspector V2</h3>
         <div id="dropzone">Drop 'generated_maze_v2.json' here</div>
         <div id="stats">Ready</div>
+        <div id="info-content"></div>
     </div>
 
     <script type="module">
@@ -91,26 +96,91 @@
             }
         }
 
+        // Shared Geometries & Materials for Optimization
+        const sharedGeos = {
+            arrowShaft: new THREE.CylinderGeometry(1.5, 1.5, 1.0, 8), // Unit length, will scale
+            arrowHead: new THREE.ConeGeometry(3.75, 1.0, 8), // Unit length, will scale
+            exitSphere: new THREE.SphereGeometry(0.7, 8, 8),
+            boxCache: {} // Cache box geometries by size string "x_y_z"
+        };
+        // Align geometries to +Y for easier rotation (Cylinder defaults to Y-up)
+        sharedGeos.arrowShaft.translate(0, 0.5, 0); // Base at 0
+        sharedGeos.arrowHead.translate(0, 0.5, 0); // Base at 0
+        
+        const sharedMats = {
+            green: new THREE.MeshLambertMaterial({ color: 0x00ff00 }),
+            red: new THREE.MeshLambertMaterial({ color: 0xff0000 }),
+            greenBasic: new THREE.MeshBasicMaterial({ color: 0x00ff00 }),
+            redBasic: new THREE.MeshBasicMaterial({ color: 0xff0000 }),
+            line: new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.5, transparent: true }),
+            boxMatCache: {} // Cache box materials by color
+        };
+
+        function cleanScene(rootGroup) {
+            if (!rootGroup) return;
+            // Remove from scene
+            scene.remove(rootGroup);
+            
+            // Dispose dynamic resources explicitly
+            disposeCache();
+        }
+        
+        function disposeCache() {
+            // 1. Dispose Box Geometries
+            Object.values(sharedGeos.boxCache).forEach(g => g.dispose());
+            sharedGeos.boxCache = {};
+            
+            // 2. Dispose Materials (including Text Textures)
+            Object.values(sharedMats.boxMatCache).forEach(m => {
+                if (m.map) m.map.dispose();
+                m.dispose();
+            });
+            sharedMats.boxMatCache = {};
+        }
+
+        // Global Sprite Map for fast access
+        window.spriteMap = {};
+        window.railDataMap = {};
+        window.railArrowMap = {};
+        window.lastHoveredSprite = null;
+        window.lastHoveredArrowIndices = []; // To reset colors
+
+        // Helper for precision
+        function formatFloat(val) {
+            if (typeof val !== 'number') return val;
+            return parseFloat(val.toFixed(8));
+        }
+
         function buildScene(data) {
-            // Cleanup
+            // Cleanup previous
             const toRemove = [];
-            scene.traverse(c => { if(c.isGroup) toRemove.push(c); });
-            toRemove.forEach(c => scene.remove(c));
+            scene.traverse(c => { if(c.name === "MazeRoot") toRemove.push(c); });
+            toRemove.forEach(c => cleanScene(c));
+            
+            // Re-init Sprite Map
+            window.spriteMap = {};
+            window.railDataMap = {};
+            window.railArrowMap = {};
+            window.lastHoveredArrowIndices = [];
 
             const root = new THREE.Group();
+            root.name = "MazeRoot";
             const rails = data.Rail;
 
+            // Stats Update
+            const totalDiff = data.MapMeta.MazeDiff ? formatFloat(data.MapMeta.MazeDiff) : "N/A";
+            
             document.getElementById('stats').innerHTML = 
-                `Level: ${data.MapMeta.LevelName}<br>` +
-                `Count: ${data.MapMeta.RailCount}<br>` +
-                `<span style="color:#0f0">●</span> Connected<br>` +
-                `<span style="color:#f00">●</span> Open Exit<br>` + 
-                `<span style="color:#00ffff">●</span> Start <span style="color:#ff00ff">●</span> End <span style="color:#ffff00">●</span> CP`;
+                `Level: <span style="color:#fff">${data.MapMeta.LevelName}</span><br>` +
+                `Count: <span style="color:#fff">${data.MapMeta.RailCount}</span><br>` +
+                `Difficulty: <span style="color:#f0a">${totalDiff}</span><br>` +
+                `<div style="margin-top:5px; font-size:10px; color:#666">` + 
+                `<span style="color:#0f0">●</span> Connected ` +
+                `<span style="color:#f00">●</span> Open ` + 
+                `<span style="color:#00ffff">●</span> Start <span style="color:#ff00ff">●</span> End` +
+                `</div>`;
 
-            // 0. Boundary Box (Dashed)
-            // Bounds are indices, e.g. 4 means -4 to +4. 
-            // Blocks are centered at index * 16.
-            // Boundary should be at edge of blocks: (index * 16) +/- 8.
+            // 0. Boundary Box (Revert to Static based on User Request)
             const half = GRID_SCALE / 2;
             const minX = -MAZE_BOUNDS.x * GRID_SCALE - half;
             const maxX =  MAZE_BOUNDS.x * GRID_SCALE + half;
@@ -126,149 +196,580 @@
             line.position.set((minX + maxX)/2, (minY + maxY)/2, (minZ + maxZ)/2);
             root.add(line);
 
+            // ==========================================
+            // INSTANCED MESH PREPARATION
+            // ==========================================
+            // 1. Analyze Rail Counts by Geometry (Size) - DEPRECATED / UNUSED in new logic
+            // We now use a single Unit Cube scaled per instance.
+
+            // 2. Count Arrows & Exits
+            let arrowCount = 0;
+            let exitCount = 0;
+            
             rails.forEach(r => {
-                // 1. Box Mesh (Size_Rev * 16)
-                const sx = r.Size_Rev.x * GRID_SCALE;
-                const sy = r.Size_Rev.y * GRID_SCALE;
-                const sz = r.Size_Rev.z * GRID_SCALE;
-
-                const geo = new THREE.BoxGeometry(sx - 1, sy - 1, sz - 1); // -1 留缝隙
-                
-                // Color Logic
-                let color = 0x888888;
-                const rid = r.Rail_ID.toLowerCase();
-                
-                if (rid.includes("start")) color = 0x00ffff; // Cyan for Start
-                else if (rid.includes("end")) color = 0xff00ff; // Magenta for End
-                else if (rid.includes("checkpoint")) color = 0xffff00; // Yellow for Checkpoint
-                else {
-                     // Normal: Diff Gradient
-                     const hue = Math.max(0, 0.35 - (r.Diff_Act / 150.0) * 0.35); // Green -> Red
-                     color = new THREE.Color().setHSL(hue, 0.8, 0.5);
+                if (r.Prev_Index !== -1) {
+                    const prev = rails.find(x => x.Rail_Index === r.Prev_Index);
+                    if (prev && prev.Exit.some(e => e.TargetInstanceID === r.Rail_Index)) arrowCount++;
                 }
+                r.Exit.forEach(ex => {
+                    if (ex.Exit_Pos_Abs) {
+                        arrowCount++;
+                        exitCount++;
+                    }
+                });
+            });
 
-                const mat = new THREE.MeshLambertMaterial({ color: color, transparent: true, opacity: 0.9 });
-                const mesh = new THREE.Mesh(geo, mat);
+            // ==========================================
+            // CREATE INSTANCED MESHES
+            // ==========================================
+            
+            // A. Block Instances
+            // Use 1 box per rail, scaled.
+            const totalBlocks = rails.length;
+            
+            // Unit cube for scaling
+            const standardBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+            const standardMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+            const blockMesh = new THREE.InstancedMesh(standardBoxGeo, standardMat, totalBlocks);
+            
+            blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            blockMesh.userData.isBlock = true;
+            blockMesh.userData.instanceMap = new Array(totalBlocks);
+            
+            root.add(blockMesh);
 
-                // Position (Pos_Abs is Pivot/Center of the first block)
-                // UE Coordinate System (Left Handed: X=Fwd, Y=Right, Z=Up) to Three.js (Right Handed Z-up: X=Right, Y=Up? No. Custom.)
-                // To align: X=Fwd, -Y=Right (since Three Y is Left in RH Z-up relative to X), Z=Up.
-                // We invert Y coordinate.
-                const cx = r.Pos_Abs.x + (sx - GRID_SCALE)/2;
-                const cy = -(r.Pos_Abs.y + (sy - GRID_SCALE)/2); // Invert Y
-                const cz = r.Pos_Abs.z + (sz - GRID_SCALE)/2;
+            // B. Arrow & Exit Instances
+            // CRITICAL: Use White material for InstancedMesh so setColorAt works correctly as a tint!
+            const arrowMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const exitMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            
+            const shaftIMesh = new THREE.InstancedMesh(sharedGeos.arrowShaft, arrowMat, arrowCount); 
+            const headIMesh = new THREE.InstancedMesh(sharedGeos.arrowHead, arrowMat, arrowCount);
+            const exitIMesh = new THREE.InstancedMesh(sharedGeos.exitSphere, exitMat, exitCount); 
+            
+            shaftIMesh.name = "ArrowShaftMesh";
+            headIMesh.name = "ArrowHeadMesh";
+            exitIMesh.name = "ExitSphereMesh";
+            
+            shaftIMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            headIMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            exitIMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            
+            if (arrowCount > 0) { root.add(shaftIMesh); root.add(headIMesh); }
+            if (exitCount > 0) { root.add(exitIMesh); }
 
-                mesh.position.set(cx, cy, cz);
+            // ==========================================
+            // POPULATE INSTANCES
+            // ==========================================
+            
+            const dummy = new THREE.Object3D();
+            const colGreen = new THREE.Color(0x00ff00);
+            const colRed = new THREE.Color(0xff0000);
+            const colGreenBasic = new THREE.Color(0x00ff00);
+            const colRedBasic = new THREE.Color(0xff0000);
+            
+            let arrowIdx = 0;
+            let exitIdx = 0;
+
+            function addArrowInstance(dir, origin, length, isGreen) {
+                const headLen = length * 0.3;
+                const shaftLen = length - headLen;
+                const color = isGreen ? colGreen : colRed;
+
+                // Shaft
+                dummy.scale.set(1, shaftLen, 1);
+                dummy.position.copy(origin);
+                dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+                dummy.updateMatrix();
+                shaftIMesh.setMatrixAt(arrowIdx, dummy.matrix);
+                shaftIMesh.setColorAt(arrowIdx, color);
+
+                // Head
+                dummy.scale.set(1, headLen, 1);
+                dummy.position.copy(origin).add(dir.clone().multiplyScalar(shaftLen));
+                dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+                dummy.updateMatrix();
+                headIMesh.setMatrixAt(arrowIdx, dummy.matrix);
+                headIMesh.setColorAt(arrowIdx, color);
                 
-                // Rotation (Z-axis is Up)
-                // UE Yaw: +90 is Right (+Y).
-                // Here Y is inverted (-Y). So Right is -Y.
-                // In RH Z-up, +RotZ is CCW (X->Y). X(Fwd) -> Y(Left).
-                // We want to rotate to Right (-Y). So we need negative rotation (CW).
-                // So +90 UE -> -90 Three.
-                mesh.rotation.z = -r.Rot_Abs.y * (Math.PI / 180);
-
-                root.add(mesh);
-
-                // 1.1 Arrows & Labels
-                const centerPos = new THREE.Vector3(cx, cy, cz);
+                arrowIdx++;
+            }
+            
+            // Helper for Text Sprite (Persistent)
+            function addTextSprite(message, pos) {
+                if (!sharedMats.boxMatCache["txt_" + message]) {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = 128;
+                    canvas.height = 128;
+                    ctx.font = "Bold 60px Arial";
+                    ctx.fillStyle = "white";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.strokeStyle = "black";
+                    ctx.lineWidth = 4;
+                    ctx.strokeText(message, 64, 64);
+                    ctx.fillText(message, 64, 64);
+                    
+                    const texture = new THREE.CanvasTexture(canvas);
+                    const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+                    sharedMats.boxMatCache["txt_" + message] = mat;
+                }
                 
-                // (A) Entrance Arrow (From Previous)
+                const sprite = new THREE.Sprite(sharedMats.boxMatCache["txt_" + message]);
+                sprite.scale.set(8, 8, 1); // Slightly smaller than before
+                sprite.position.copy(pos); // CENTERED: No offset
+                sprite.renderOrder = 10;
+                sprite.userData = { isText: true, id: message }; // Mark for raycaster
+                root.add(sprite);
+                
+                // Add to Map
+                window.spriteMap[message] = sprite;
+            }
+
+            // Populate Blocks
+            let globalBlockIdx = 0;
+            const GAP = 1.0; // Gap between rails
+            
+            rails.forEach(r => {
+                // Determine Color
+                let colorHex = 0x88ccff; // Light Blue default
+                const rid = r.Rail_ID.toLowerCase();
+                if (rid.includes("start")) colorHex = 0x00ffff;
+                else if (rid.includes("end")) colorHex = 0xff00ff;
+                else if (rid.includes("checkpoint")) colorHex = 0xffff00;
+                
+                const col = new THREE.Color(colorHex);
+                
+                // Metadata
+                const meta = { 
+                    id: r.Rail_Index, 
+                    type: r.Rail_ID,
+                    pos: r.Pos_Abs,
+                    pos_rev: r.Pos_Rev,
+                    rot: r.Rot_Abs,
+                    diff: r.Diff_Act
+                };
+                
+                // Transform
+                let cx, cy, cz;
+
+                if (r.Occupied_Cells_Rev && r.Occupied_Cells_Rev.length > 0) {
+                    // Calculate center of the bounding box of occupied cells
+                    let minX = Infinity, maxX = -Infinity;
+                    let minY = Infinity, maxY = -Infinity;
+                    let minZ = Infinity, maxZ = -Infinity;
+
+                    r.Occupied_Cells_Rev.forEach(cell => {
+                        // Convert to Three.js coordinates
+                        const tx = cell.x * GRID_SCALE;
+                        const ty = -cell.y * GRID_SCALE; // Invert Y
+                        const tz = cell.z * GRID_SCALE;
+
+                        if (tx < minX) minX = tx;
+                        if (tx > maxX) maxX = tx;
+                        if (ty < minY) minY = ty;
+                        if (ty > maxY) maxY = ty;
+                        if (tz < minZ) minZ = tz;
+                        if (tz > maxZ) maxZ = tz;
+                    });
+
+                    cx = (minX + maxX) / 2;
+                    cy = (minY + maxY) / 2;
+                    cz = (minZ + maxZ) / 2;
+                } else {
+                    // Fallback to Pos_Abs if no cell data
+                    cx = r.Pos_Abs.x;
+                    cy = -r.Pos_Abs.y; // Invert Y
+                    cz = r.Pos_Abs.z;
+                }
+                
+                // Size with Gap
+                // r.Size_Rev is expected to be {x, y, z}
+                const sx = (r.Size_Rev.x * GRID_SCALE) - GAP;
+                const sy = (r.Size_Rev.y * GRID_SCALE) - GAP;
+                const sz = (r.Size_Rev.z * GRID_SCALE) - GAP;
+                
+                dummy.position.set(cx, cy, cz);
+                
+                // Rotation
+                // JSON: p=Pitch(Y), y=Yaw(Z), r=Roll(X)
+                // Three: X, Y, Z radians.
+                const rx = THREE.MathUtils.degToRad(r.Rot_Abs.r || 0);
+                const ry = THREE.MathUtils.degToRad(r.Rot_Abs.p || 0);
+                const rz = THREE.MathUtils.degToRad(r.Rot_Abs.y || 0);
+                
+                // Apply rotation. Order ZYX is common for Euler if not specified.
+                dummy.rotation.set(rx, ry, rz, 'ZYX');
+                
+                dummy.scale.set(sx, sy, sz);
+                dummy.updateMatrix();
+                
+                blockMesh.setMatrixAt(globalBlockIdx, dummy.matrix);
+                blockMesh.setColorAt(globalBlockIdx, col);
+                blockMesh.userData.instanceMap[globalBlockIdx] = meta;
+                
+                // Text Sprite at Pivot
+                addTextSprite(r.Rail_Index.toString(), new THREE.Vector3(cx, cy, cz));
+                
+                globalBlockIdx++;
+            });
+            
+            blockMesh.instanceMatrix.needsUpdate = true;
+            if (blockMesh.instanceColor) blockMesh.instanceColor.needsUpdate = true;
+
+            // Populate Arrows & Topology
+            rails.forEach(r => {
+                // (A) Entrance
                 if (r.Prev_Index !== -1) {
                     const prev = rails.find(x => x.Rail_Index === r.Prev_Index);
                     if (prev) {
-                        // Find connection
                         const connectedExit = prev.Exit.find(e => e.TargetInstanceID === r.Rail_Index);
                         if (connectedExit) {
-                            // Entrance Pos = Connected Exit Pos (Invert Y)
                             const entPos = new THREE.Vector3(connectedExit.Exit_Pos_Abs.x, -connectedExit.Exit_Pos_Abs.y, connectedExit.Exit_Pos_Abs.z);
-                            // Dir = Exit Dir of Prev (Invert Y logic handled in getDirVector)
                             const entDir = getDirVector(connectedExit.Exit_Dir_Abs);
+                            // Entrance Arrow: Butt at face, points inward. Length ~4.
+                            // User wants: "Entrance arrow should be drawn at x=-8~-4" (if face at -8, flow +X).
+                            // BUT User said: "arrow positions are still offset, start/end too forward ... move back 8cm".
+                            // Previous logic: Base at Face. Tip at Face+4.
+                            // If we move back 8cm (0.5 Grid).
+                            // Base at Face - 8. Tip at Face - 4.
+                            // This puts the arrow entirely inside the PREVIOUS block (for entrance) or NEXT block?
+                            // Wait. Entrance Arrow is usually drawn on the CURRENT block to show where ball enters.
+                            // If Face is at -8 (Boundary). Current block is -8..8? No, Current block is 8..24?
+                            // If flow is +X. Connected Exit is at -8. Current Block starts at -8.
+                            // So Base at -8 is correct.
+                            // User says "too forward". Maybe they mean "too far into the block"?
+                            // "move back 8cm".
+                            // If we move Base from -8 to -16. That's outside the block.
+                            // If we move Base from -8 to 0. That's further inside.
+                            // "Forward" usually means along the arrow direction.
+                            // If Arrow points +X. "Too forward" means it's too far +X.
+                            // So we should move it -X (Back).
+                            // So Base at -8 -> Base at -16?
+                            // But -16 is the previous block center.
+                            // Maybe User wants the arrow centered on the face?
+                            // Or maybe my understanding of "Forward" is reversed?
+                            // User said: "start and end arrows are too forward (relative to arrow direction)".
+                            // "Move back 8cm".
+                            // Entrance Arrow: Dir is Inward (+X relative to face).
+                            // If it's "too forward", it's too deep inside.
+                            // "Move back" means move against Dir.
+                            // So Base at Face - 8.
+                            // If Face is -8. Base at -16.
+                            // This puts the arrow in the Previous Block (the one feeding us).
+                            // Maybe that's what they want?
+                            // But for Start/End arrows?
+                            // Let's just apply the offset requested: -8cm along direction.
                             
-                            // Arrow Origin at Entrance, Pointing In (Dir)
-                            const arrowEnt = createThickArrow(entDir, entPos, GRID_SCALE * 0.8, 0x00ff00);
-                            root.add(arrowEnt);
+                            // Current Origin: entPos.
+                            // New Origin: entPos - 8 * entDir.
+                            const offset = 8.0;
+                            const newOrigin = entPos.clone().sub(entDir.clone().multiplyScalar(offset));
+                            
+                            addArrowInstance(entDir, newOrigin, 4.0, true);
+                            
+                            // Also map this arrow to the rail for highlighting?
+                            // This arrow belongs to 'r' (Entrance of r).
+                            // But instance mesh doesn't easily support per-instance logic unless we map index.
+                            // arrowIdx is incremented. We can store it.
+                            if (!window.railArrowMap) window.railArrowMap = {};
+                            if (!window.railArrowMap[r.Rail_Index]) window.railArrowMap[r.Rail_Index] = [];
+                            window.railArrowMap[r.Rail_Index].push(arrowIdx - 1); // Last added arrow
                         }
                     }
                 }
 
-                // (B) Exit Arrows (Own Exits)
+                // (B) Exits
                 r.Exit.forEach(ex => {
                     if (!ex.Exit_Pos_Abs) return;
-                    // Invert Y for pos
                     const exPos = new THREE.Vector3(ex.Exit_Pos_Abs.x, -ex.Exit_Pos_Abs.y, ex.Exit_Pos_Abs.z);
                     const exDir = getDirVector(ex.Exit_Dir_Abs);
                     
-                    // User wants arrow "inside" the block.
-                    // Shift origin back by length so tip touches the exit.
-                    const arrowLen = GRID_SCALE * 0.8;
-                    const origin = exPos.clone().sub(exDir.clone().multiplyScalar(arrowLen));
+                    // Exit Arrow: Tip at face, points outward. Length ~4.
+                    const arrowLen = 4.0;
+                    // User wants: "Exit arrow should be drawn at x=4~8" (if face at 8, flow +X).
+                    // BUT User said: "start and end arrows are too forward ... move back 8cm".
+                    // Previous logic: Origin = Face - 4. (Base at 4, Tip at 8).
+                    // If we move back 8cm (0.5 Grid) against direction.
+                    // Origin = Face - 4 - 8 = Face - 12.
+                    // Base at -4. Tip at 0.
+                    // This puts the arrow entirely in the 0..-4 range? No.
+                    // If Face is 8. Base at -4. Tip at 0.
+                    // This is center of block (0).
+                    // So arrow is drawn from Center (0) to Center+4? No.
+                    // Arrow Length is 4.
+                    // Base at -4 (relative to face?). No, Absolute coords.
+                    // Face = 8.
+                    // Origin = 8 - 4 - 8 = -4.
+                    // Tip = Origin + 4 = 0.
+                    // So Arrow is -4..0.
+                    // Center of block is 0.
+                    // So Arrow points TO center?
+                    // Exit Arrow should point OUT.
+                    // User said "move back 8cm".
+                    // Maybe they want it centered in the cell?
+                    // Previous was 4..8.
+                    // New is -4..0.
+                    // This seems like a big jump.
+                    // But if "too forward" means "too close to the next block".
+                    // Then moving back pulls it into the current block.
                     
-                    const arrowEx = createThickArrow(exDir, origin, arrowLen, 0xff0000);
-                    root.add(arrowEx);
+                    const offset = 8.0;
+                    // Original Origin was (exPos - 4*Dir).
+                    // New Origin = Original - 8*Dir = exPos - 12*Dir.
+                    
+                    const origin = exPos.clone().sub(exDir.clone().multiplyScalar(arrowLen + offset));
+                    addArrowInstance(exDir, origin, arrowLen, false);
+                    
+                    if (!window.railArrowMap) window.railArrowMap = {};
+                    if (!window.railArrowMap[r.Rail_Index]) window.railArrowMap[r.Rail_Index] = [];
+                    window.railArrowMap[r.Rail_Index].push(arrowIdx - 1);
+                    
+                    // Sphere (Red if unconnected, Green if connected)
+                    // Note: If arrow is Red (unconnected), sphere should match or be distinctive?
+                    // User asked for "Red Dot" for open exit.
+                    dummy.scale.set(1, 1, 1);
+                    dummy.position.copy(exPos);
+                    dummy.rotation.set(0,0,0);
+                    dummy.updateMatrix();
+                    exitIMesh.setMatrixAt(exitIdx, dummy.matrix);
+                    exitIMesh.setColorAt(exitIdx, ex.IsConnected ? colGreenBasic : colRedBasic);
+                    exitIdx++;
                 });
 
-                // 1.2 Index Label (Center)
-                const sprite = createTextSprite(`#${r.Rail_Index}`);
-                sprite.position.copy(centerPos);
-                // sprite.position.z += sz/2 + 2; 
-                root.add(sprite);
-
-                // 2. Exits (Small Spheres)
-                r.Exit.forEach(ex => {
-                    if (!ex.Exit_Pos_Abs) return;
-                    const eGeo = new THREE.SphereGeometry(0.7);
-                    const eMat = new THREE.MeshBasicMaterial({ color: ex.IsConnected ? 0x00ff00 : 0xff0000 });
-                    const eMesh = new THREE.Mesh(eGeo, eMat);
-                    eMesh.position.set(ex.Exit_Pos_Abs.x, -ex.Exit_Pos_Abs.y, ex.Exit_Pos_Abs.z); // Invert Y
-                    root.add(eMesh);
-                });
-
-                // 3. Topology Lines
+                // (C) Topology Lines (Keep as regular lines)
                 if (r.Prev_Index !== -1) {
                     const prev = rails.find(x => x.Rail_Index === r.Prev_Index);
                     if (prev) {
                         const pts = [
-                            new THREE.Vector3(prev.Pos_Abs.x, -prev.Pos_Abs.y, prev.Pos_Abs.z), // Invert Y
-                            new THREE.Vector3(r.Pos_Abs.x, -r.Pos_Abs.y, r.Pos_Abs.z) // Invert Y
+                            new THREE.Vector3(prev.Pos_Abs.x, -prev.Pos_Abs.y, prev.Pos_Abs.z),
+                            new THREE.Vector3(r.Pos_Abs.x, -r.Pos_Abs.y, r.Pos_Abs.z)
                         ];
                         const lGeo = new THREE.BufferGeometry().setFromPoints(pts);
-                        const lMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.5, transparent: true });
-                        root.add(new THREE.Line(lGeo, lMat));
+                        root.add(new THREE.Line(lGeo, sharedMats.line));
                     }
                 }
             });
 
             scene.add(root);
+            setupRaycaster(root);
         }
 
-        function createThickArrow(dir, origin, length, color) {
-            const arrowGroup = new THREE.Group();
-            
-            const headLen = length * 0.3;
-            const shaftLen = length - headLen;
-            const shaftRadius = 1.5; 
-            const headRadius = shaftRadius * 2.5;
+        // Raycaster Global State
+        let raycaster, mouse, hoverSprite;
+        
+        function setupRaycaster(targetRoot) {
+            if (!raycaster) {
+                raycaster = new THREE.Raycaster();
+                mouse = new THREE.Vector2();
+                
+                window.addEventListener('mousemove', onMouseMove, false);
+            }
+            // Reset hover sprite
+            if (hoverSprite) {
+                scene.remove(hoverSprite);
+                hoverSprite = null;
+            }
+        }
 
-            const mat = new THREE.MeshLambertMaterial({ color: color });
+        function onMouseMove(event) {
+            // Normalize mouse
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
             
-            // Shaft
-            const shaftGeo = new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLen, 12);
-            const shaftMesh = new THREE.Mesh(shaftGeo, mat);
-            shaftMesh.position.y = shaftLen / 2;
-            arrowGroup.add(shaftMesh);
+            raycaster.setFromCamera(mouse, camera);
             
-            // Head
-            const headGeo = new THREE.ConeGeometry(headRadius, headLen, 12);
-            const headMesh = new THREE.Mesh(headGeo, mat);
-            headMesh.position.y = shaftLen + headLen / 2;
-            arrowGroup.add(headMesh);
+            // 1. Intersect Blocks
+            const intersects = raycaster.intersectObjects(scene.children, true);
             
-            // Orientation
-            arrowGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-            arrowGroup.position.copy(origin);
+            let foundBlock = null;
             
-            return arrowGroup;
+            for (let i = 0; i < intersects.length; i++) {
+                const obj = intersects[i].object;
+                // Check InstancedMesh Block
+                if (obj.userData.isBlock && obj.userData.instanceMap) {
+                    const instanceId = intersects[i].instanceId;
+                    if (instanceId !== undefined && obj.userData.instanceMap[instanceId]) {
+                        foundBlock = obj.userData.instanceMap[instanceId];
+                        break;
+                    }
+                }
+                // Check Text Sprite
+                if (obj.userData && obj.userData.isText) {
+                    // Find corresponding block data if needed, or just highlight text
+                    // For now, let's just use the ID from the text
+                    foundBlock = { id: parseInt(obj.userData.id) }; // Partial data
+                    break;
+                }
+            }
+            
+            // Update Text Highlight
+            // Iterate all sprites? No, too slow.
+            // We need a way to target the specific sprite.
+            // Since we don't have a map from ID to Sprite easily accessible without traversing,
+            // let's just rely on the fact that sprites are persistent.
+            // Actually, we can just make the hovered sprite yellow.
+            
+            // Reset previous hover
+            if (window.lastHoveredSprite) {
+                window.lastHoveredSprite.material.color.set(0xffffff);
+                window.lastHoveredSprite.scale.set(8, 8, 1);
+                window.lastHoveredSprite = null;
+            }
+            // Reset Arrow Colors
+            if (window.lastHoveredArrowIndices.length > 0) {
+                 // We need access to shaftIMesh and headIMesh to reset color
+                 // They are inside buildScene scope. We should expose them or find them.
+                 // Finding by name is easiest.
+                 const shaft = scene.getObjectByName("ArrowShaftMesh");
+                 const head = scene.getObjectByName("ArrowHeadMesh");
+                 const white = new THREE.Color(0xffffff);
+                 const green = new THREE.Color(0x00ff00);
+                 const red = new THREE.Color(0xff0000);
+                 
+                 // Ideally we should restore original color (Green/Red).
+                 // But we didn't store which was which.
+                 // Simplified: Just reset to white? No, they were Red/Green.
+                 // We need to know if it was Entrance (Green) or Exit (Red/Green).
+                 // This is getting complex for simple hover.
+                 // Let's just set them to White for highlight, and back to... wait.
+                 // If we set them to Yellow for highlight.
+                 // To reset, we need the original color.
+                 // Optimization: Store original color in instance color attribute?
+                 // InstancedMesh has .getColorAt / .setColorAt.
+                 
+                 if (shaft && head) {
+                     window.lastHoveredArrowIndices.forEach(idx => {
+                         // We need to retrieve original color before highlighting?
+                         // Or we can just re-calculate it? 
+                         // Or we can just store it in a cache when we highlight.
+                         if (window.arrowColorCache && window.arrowColorCache[idx]) {
+                             const col = window.arrowColorCache[idx];
+                             shaft.setColorAt(idx, col);
+                             head.setColorAt(idx, col);
+                         }
+                     });
+                     shaft.instanceColor.needsUpdate = true;
+                     head.instanceColor.needsUpdate = true;
+                 }
+                 window.lastHoveredArrowIndices = [];
+            }
+
+            if (foundBlock) {
+                // Find the sprite for this block ID
+                if (window.spriteMap && window.spriteMap[foundBlock.id]) {
+                    const sprite = window.spriteMap[foundBlock.id];
+                    sprite.material.color.set(0xffff00); // Yellow
+                    sprite.scale.set(12, 12, 1); // Enlarge
+                    window.lastHoveredSprite = sprite;
+                }
+                
+                // Highlight Arrows
+                if (window.railArrowMap && window.railArrowMap[foundBlock.id]) {
+                     const indices = window.railArrowMap[foundBlock.id];
+                     const shaft = scene.getObjectByName("ArrowShaftMesh");
+                     const head = scene.getObjectByName("ArrowHeadMesh");
+                     
+                     if (shaft && head) {
+                         if (!window.arrowColorCache) window.arrowColorCache = {};
+                         const highlightCol = new THREE.Color(0xffff00); // Yellow
+                         const tempCol = new THREE.Color();
+                         
+                         indices.forEach(idx => {
+                             // Save original color
+                             shaft.getColorAt(idx, tempCol);
+                             window.arrowColorCache[idx] = tempCol.clone();
+                             
+                             // Set Highlight
+                             shaft.setColorAt(idx, highlightCol);
+                             head.setColorAt(idx, highlightCol);
+                         });
+                         shaft.instanceColor.needsUpdate = true;
+                         head.instanceColor.needsUpdate = true;
+                         window.lastHoveredArrowIndices = indices;
+                     }
+                }
+                
+                // Update Info Panel
+                const infoContent = document.getElementById('info-content');
+                if (infoContent) {
+                    let data = foundBlock;
+                    if (!data.type && window.railDataMap) {
+                        data = window.railDataMap[foundBlock.id];
+                    }
+                    
+                    if (data && data.type) {
+                        // Safe access helpers
+                        const px = data.pos ? formatFloat(data.pos.x) : 0;
+                        const py = data.pos ? formatFloat(data.pos.y) : 0;
+                        const pz = data.pos ? formatFloat(data.pos.z) : 0;
+                        
+                        const prx = data.pos_rev ? formatFloat(data.pos_rev.x) : 0;
+                        const pry = data.pos_rev ? formatFloat(data.pos_rev.y) : 0;
+                        const prz = data.pos_rev ? formatFloat(data.pos_rev.z) : 0;
+                        
+                        // Rot is {p, y, r}
+                        const rotP = data.rot ? formatFloat(data.rot.p) : 0;
+                        const rotY = data.rot ? formatFloat(data.rot.y) : 0;
+                        const rotR = data.rot ? formatFloat(data.rot.r) : 0;
+                        
+                        const diffVal = data.diff ? formatFloat(data.diff) : 0;
+
+                        infoContent.innerHTML = `
+                            <div class="info-row"><span class="info-label">ID:</span><span class="info-val">${data.id}</span></div>
+                            <div class="info-row"><span class="info-label">Type:</span><span class="info-val">${data.type}</span></div>
+                            <div class="info-row"><span class="info-label">Pos (Abs):</span><span class="info-val">(${px}, ${py}, ${pz})</span></div>
+                            <div class="info-row"><span class="info-label">Pos (Rev):</span><span class="info-val">(${prx}, ${pry}, ${prz})</span></div>
+                            <div class="info-row"><span class="info-label">Rot (P/Y/R):</span><span class="info-val">(${rotP}, ${rotY}, ${rotR})</span></div>
+                            <div class="info-row"><span class="info-label">Diff:</span><span class="info-val">${diffVal}</span></div>
+                        `;
+                        infoContent.style.display = 'block';
+                    }
+                }
+            } else {
+                const infoContent = document.getElementById('info-content');
+                if (infoContent) infoContent.style.display = 'none';
+            }
+        }
+
+        function updateHoverText(id, pos) {
+            const message = "#" + id;
+            
+            // Re-enable cache logic just for single active sprite? 
+            // Actually, for a single sprite, we can just update canvas.
+            // Or use the cache we had but only create ON DEMAND.
+            
+            if (!hoverSprite) {
+                hoverSprite = new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff, depthTest: false }));
+                hoverSprite.scale.set(12, 12, 1);
+                hoverSprite.renderOrder = 999;
+                scene.add(hoverSprite);
+            }
+            
+            // Check if material exists
+            if (!sharedMats.boxMatCache["txt_" + message]) {
+                 const canvas = document.createElement('canvas');
+                 const ctx = canvas.getContext('2d');
+                 canvas.width = 128;
+                 canvas.height = 128;
+                 ctx.font = "Bold 60px Arial";
+                 ctx.fillStyle = "white";
+                 ctx.textAlign = "center";
+                 ctx.textBaseline = "middle";
+                 ctx.strokeStyle = "black";
+                 ctx.lineWidth = 4;
+                 ctx.strokeText(message, 64, 64);
+                 ctx.fillText(message, 64, 64);
+                 
+                 const texture = new THREE.CanvasTexture(canvas);
+                 const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+                 sharedMats.boxMatCache["txt_" + message] = mat;
+            }
+            
+            hoverSprite.material = sharedMats.boxMatCache["txt_" + message];
+            hoverSprite.visible = true;
+            hoverSprite.position.copy(pos).add(new THREE.Vector3(0, 0, 10));
         }
 
         function getDirVector(dirStr) {
@@ -278,28 +779,9 @@
             if (dirStr === "-X") return new THREE.Vector3(-1, 0, 0);
             if (dirStr === "+Y") return new THREE.Vector3(0, -1, 0); // Flip Y
             if (dirStr === "-Y") return new THREE.Vector3(0, 1, 0);  // Flip Y
+            if (dirStr === "+Z") return new THREE.Vector3(0, 0, 1);
+            if (dirStr === "-Z") return new THREE.Vector3(0, 0, -1);
             return new THREE.Vector3(0, 0, 1);
-        }
-
-        function createTextSprite(message) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = 256;
-            canvas.height = 256;
-            ctx.font = "Bold 100px Arial";
-            ctx.fillStyle = "white";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.strokeStyle = "black";
-            ctx.lineWidth = 8;
-            ctx.strokeText(message, 128, 128);
-            ctx.fillText(message, 128, 128);
-            
-            const texture = new THREE.CanvasTexture(canvas);
-            const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
-            const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(12, 12, 1);
-            return sprite;
         }
 
         function animate() {
