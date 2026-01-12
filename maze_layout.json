@@ -1,21 +1,21 @@
 {
     "MapMeta": {
         "LevelName": "Python_Generated_V2",
-        "RailCount": 10,
-        "MazeDiff": 16.1086
+        "RailCount": 11,
+        "MazeDiff": 17.791040000000002
     },
     "Rail": [
         {
             "Rail_Index": 0,
             "Rail_ID": "BP_Start_F_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 2,
-                "y": -4,
+                "x": -3,
+                "y": 2,
                 "z": 0
             },
             "Pos_Abs": {
-                "x": 32.0,
-                "y": -64.0,
+                "x": -48.0,
+                "y": 32.0,
                 "z": 0.0
             },
             "Rot_Abs": {
@@ -31,8 +31,8 @@
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 2,
-                    "y": -4,
+                    "x": -3,
+                    "y": 2,
                     "z": 0
                 }
             ],
@@ -40,19 +40,20 @@
             "Diff_Act": 0.0,
             "Prev_Index": -1,
             "Next_Index": [
+                1,
                 1
             ],
             "Exit": [
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 3,
-                        "y": -4,
+                        "x": -2,
+                        "y": 2,
                         "z": 0
                     },
                     "Exit_Pos_Abs": {
-                        "x": 48.0,
-                        "y": -64.0,
+                        "x": -32.0,
+                        "y": 32.0,
                         "z": 0.0
                     },
                     "Exit_Rot_Abs": {
@@ -68,15 +69,15 @@
         },
         {
             "Rail_Index": 1,
-            "Rail_ID": "BP_Straight_U90_X1_Y1_Z1_Rail",
+            "Rail_ID": "BP_Bump_FD_X2_Y1_Z2_Rail",
             "Pos_Rev": {
-                "x": 3,
-                "y": -4,
+                "x": -2,
+                "y": 2,
                 "z": 0
             },
             "Pos_Abs": {
-                "x": 48.0,
-                "y": -64.0,
+                "x": -32.0,
+                "y": 32.0,
                 "z": 0.0
             },
             "Rot_Abs": {
@@ -86,44 +87,57 @@
             },
             "Dir_Abs": "+X",
             "Size_Rev": {
-                "x": 1,
+                "x": 2,
                 "y": 1,
-                "z": 1
+                "z": 2
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 3,
-                    "y": -4,
+                    "x": -2,
+                    "y": 2,
+                    "z": -1
+                },
+                {
+                    "x": -2,
+                    "y": 2,
+                    "z": 0
+                },
+                {
+                    "x": -1,
+                    "y": 2,
+                    "z": -1
+                },
+                {
+                    "x": -1,
+                    "y": 2,
                     "z": 0
                 }
             ],
             "Diff_Base": 0,
-            "Diff_Act": 1.0,
+            "Diff_Act": 5.2,
             "Prev_Index": 0,
             "Next_Index": [
-                2,
-                2,
                 2
             ],
             "Exit": [
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 3,
-                        "y": -4,
-                        "z": 1
+                        "x": 0,
+                        "y": 2,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 48.0,
-                        "y": -64.0,
-                        "z": 16.0
+                        "x": 0.0,
+                        "y": 32.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
-                        "p": 90.0,
+                        "p": 0.0,
                         "y": 0.0,
                         "r": 0.0
                     },
-                    "Exit_Dir_Abs": "+Z",
+                    "Exit_Dir_Abs": "+X",
                     "IsConnected": true,
                     "TargetInstanceID": 2
                 }
@@ -131,16 +145,16 @@
         },
         {
             "Rail_Index": 2,
-            "Rail_ID": "BP_Curve_R90_Borderless_I_X1_Y1_Z1_Rail",
+            "Rail_ID": "BP_Curve_R90_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 3,
-                "y": -4,
-                "z": 1
+                "x": 0,
+                "y": 2,
+                "z": -1
             },
             "Pos_Abs": {
-                "x": 48.0,
-                "y": -64.0,
-                "z": 16.0
+                "x": 0.0,
+                "y": 32.0,
+                "z": -16.0
             },
             "Rot_Abs": {
                 "p": 0.0,
@@ -155,13 +169,13 @@
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 3,
-                    "y": -4,
-                    "z": 1
+                    "x": 0,
+                    "y": 2,
+                    "z": -1
                 }
             ],
             "Diff_Base": 0,
-            "Diff_Act": 1.1,
+            "Diff_Act": 1.52,
             "Prev_Index": 1,
             "Next_Index": [
                 3
@@ -170,14 +184,14 @@
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 3,
-                        "y": -3,
-                        "z": 1
+                        "x": 0,
+                        "y": 3,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 48.0,
-                        "y": -48.0,
-                        "z": 16.0
+                        "x": 0.0,
+                        "y": 48.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,
@@ -192,16 +206,16 @@
         },
         {
             "Rail_Index": 3,
-            "Rail_ID": "BP_Curve_R90_Borderless_Caved_X1_Y1_Z1_Rail",
+            "Rail_ID": "BP_Curve_R90_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 3,
-                "y": -3,
-                "z": 1
+                "x": 0,
+                "y": 3,
+                "z": -1
             },
             "Pos_Abs": {
-                "x": 48.0,
-                "y": -48.0,
-                "z": 16.0
+                "x": 0.0,
+                "y": 48.0,
+                "z": -16.0
             },
             "Rot_Abs": {
                 "p": 0.0,
@@ -216,29 +230,30 @@
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 3,
-                    "y": -3,
-                    "z": 1
+                    "x": 0,
+                    "y": 3,
+                    "z": -1
                 }
             ],
             "Diff_Base": 0,
-            "Diff_Act": 2.22,
+            "Diff_Act": 1.1520000000000001,
             "Prev_Index": 2,
             "Next_Index": [
+                4,
                 4
             ],
             "Exit": [
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 2,
-                        "y": -3,
-                        "z": 1
+                        "x": -1,
+                        "y": 3,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 32.0,
-                        "y": -48.0,
-                        "z": 16.0
+                        "x": -16.0,
+                        "y": 48.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,
@@ -253,16 +268,16 @@
         },
         {
             "Rail_Index": 4,
-            "Rail_ID": "BP_Curve_L90_X1_Y1_Z1_Rail",
+            "Rail_ID": "BP_Straight_F_Borderless_R_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 2,
-                "y": -3,
-                "z": 1
+                "x": -1,
+                "y": 3,
+                "z": -1
             },
             "Pos_Abs": {
-                "x": 32.0,
-                "y": -48.0,
-                "z": 16.0
+                "x": -16.0,
+                "y": 48.0,
+                "z": -16.0
             },
             "Rot_Abs": {
                 "p": 0.0,
@@ -277,13 +292,13 @@
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 2,
-                    "y": -3,
-                    "z": 1
+                    "x": -1,
+                    "y": 3,
+                    "z": -1
                 }
             ],
             "Diff_Base": 0,
-            "Diff_Act": 1.222,
+            "Diff_Act": 1.7872000000000003,
             "Prev_Index": 3,
             "Next_Index": [
                 5
@@ -292,14 +307,96 @@
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 2,
-                        "y": -2,
-                        "z": 1
+                        "x": -2,
+                        "y": 3,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 32.0,
-                        "y": -32.0,
-                        "z": 16.0
+                        "x": -32.0,
+                        "y": 48.0,
+                        "z": -16.0
+                    },
+                    "Exit_Rot_Abs": {
+                        "p": 0.0,
+                        "y": 180.0,
+                        "r": 0.0
+                    },
+                    "Exit_Dir_Abs": "-X",
+                    "IsConnected": true,
+                    "TargetInstanceID": 5
+                }
+            ]
+        },
+        {
+            "Rail_Index": 5,
+            "Rail_ID": "BP_Straight_T_X1_Y1_Z1_Rail",
+            "Pos_Rev": {
+                "x": -2,
+                "y": 3,
+                "z": -1
+            },
+            "Pos_Abs": {
+                "x": -32.0,
+                "y": 48.0,
+                "z": -16.0
+            },
+            "Rot_Abs": {
+                "p": 0.0,
+                "y": 180.0,
+                "r": 0.0
+            },
+            "Dir_Abs": "-X",
+            "Size_Rev": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "Occupied_Cells_Rev": [
+                {
+                    "x": -2,
+                    "y": 3,
+                    "z": -1
+                }
+            ],
+            "Diff_Base": 0,
+            "Diff_Act": 0.0,
+            "Prev_Index": 4,
+            "Next_Index": [
+                6
+            ],
+            "Exit": [
+                {
+                    "Index": 0,
+                    "Exit_Pos_Rev": {
+                        "x": -2,
+                        "y": 2,
+                        "z": -1
+                    },
+                    "Exit_Pos_Abs": {
+                        "x": -32.0,
+                        "y": 32.0,
+                        "z": -16.0
+                    },
+                    "Exit_Rot_Abs": {
+                        "p": 0.0,
+                        "y": 270.0,
+                        "r": 0.0
+                    },
+                    "Exit_Dir_Abs": "-Y",
+                    "IsConnected": false,
+                    "TargetInstanceID": -1
+                },
+                {
+                    "Index": 1,
+                    "Exit_Pos_Rev": {
+                        "x": -2,
+                        "y": 4,
+                        "z": -1
+                    },
+                    "Exit_Pos_Abs": {
+                        "x": -32.0,
+                        "y": 64.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,
@@ -308,22 +405,22 @@
                     },
                     "Exit_Dir_Abs": "+Y",
                     "IsConnected": true,
-                    "TargetInstanceID": 5
+                    "TargetInstanceID": 6
                 }
             ]
         },
         {
-            "Rail_Index": 5,
-            "Rail_ID": "BP_Curve_L90_Borderless_O_X1_Y1_Z1_Rail",
+            "Rail_Index": 6,
+            "Rail_ID": "BP_Curve_R90_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 2,
-                "y": -2,
-                "z": 1
+                "x": -2,
+                "y": 4,
+                "z": -1
             },
             "Pos_Abs": {
-                "x": 32.0,
-                "y": -32.0,
-                "z": 16.0
+                "x": -32.0,
+                "y": 64.0,
+                "z": -16.0
             },
             "Rot_Abs": {
                 "p": 0.0,
@@ -338,74 +435,13 @@
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 2,
-                    "y": -2,
-                    "z": 1
+                    "x": -2,
+                    "y": 4,
+                    "z": -1
                 }
             ],
             "Diff_Base": 0,
-            "Diff_Act": 2.8055000000000003,
-            "Prev_Index": 4,
-            "Next_Index": [
-                6
-            ],
-            "Exit": [
-                {
-                    "Index": 0,
-                    "Exit_Pos_Rev": {
-                        "x": 3,
-                        "y": -2,
-                        "z": 1
-                    },
-                    "Exit_Pos_Abs": {
-                        "x": 48.0,
-                        "y": -32.0,
-                        "z": 16.0
-                    },
-                    "Exit_Rot_Abs": {
-                        "p": 0.0,
-                        "y": 0.0,
-                        "r": 0.0
-                    },
-                    "Exit_Dir_Abs": "+X",
-                    "IsConnected": true,
-                    "TargetInstanceID": 6
-                }
-            ]
-        },
-        {
-            "Rail_Index": 6,
-            "Rail_ID": "BP_Straight_F_Borderless_X1_Y1_Z1_Rail",
-            "Pos_Rev": {
-                "x": 3,
-                "y": -2,
-                "z": 1
-            },
-            "Pos_Abs": {
-                "x": 48.0,
-                "y": -32.0,
-                "z": 16.0
-            },
-            "Rot_Abs": {
-                "p": 0.0,
-                "y": 0.0,
-                "r": 0.0
-            },
-            "Dir_Abs": "+X",
-            "Size_Rev": {
-                "x": 1,
-                "y": 1,
-                "z": 1
-            },
-            "Occupied_Cells_Rev": [
-                {
-                    "x": 3,
-                    "y": -2,
-                    "z": 1
-                }
-            ],
-            "Diff_Base": 0,
-            "Diff_Act": 2.5611,
+            "Diff_Act": 1.0,
             "Prev_Index": 5,
             "Next_Index": [
                 7
@@ -414,21 +450,21 @@
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 4,
-                        "y": -2,
-                        "z": 1
+                        "x": -3,
+                        "y": 4,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 64.0,
-                        "y": -32.0,
-                        "z": 16.0
+                        "x": -48.0,
+                        "y": 64.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,
-                        "y": 0.0,
+                        "y": 180.0,
                         "r": 0.0
                     },
-                    "Exit_Dir_Abs": "+X",
+                    "Exit_Dir_Abs": "-X",
                     "IsConnected": true,
                     "TargetInstanceID": 7
                 }
@@ -436,23 +472,23 @@
         },
         {
             "Rail_Index": 7,
-            "Rail_ID": "BP_Straight_FR90_X1_Y1_Z1_Rail",
+            "Rail_ID": "BP_Straight_T_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 4,
-                "y": -2,
-                "z": 1
+                "x": -3,
+                "y": 4,
+                "z": -1
             },
             "Pos_Abs": {
-                "x": 64.0,
-                "y": -32.0,
-                "z": 16.0
+                "x": -48.0,
+                "y": 64.0,
+                "z": -16.0
             },
             "Rot_Abs": {
                 "p": 0.0,
-                "y": 0.0,
+                "y": 180.0,
                 "r": 0.0
             },
-            "Dir_Abs": "+X",
+            "Dir_Abs": "-X",
             "Size_Rev": {
                 "x": 1,
                 "y": 1,
@@ -460,9 +496,9 @@
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 4,
-                    "y": -2,
-                    "z": 1
+                    "x": -3,
+                    "y": 4,
+                    "z": -1
                 }
             ],
             "Diff_Base": 0,
@@ -475,35 +511,35 @@
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 5,
-                        "y": -2,
-                        "z": 1
+                        "x": -3,
+                        "y": 3,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 80.0,
-                        "y": -32.0,
-                        "z": 16.0
+                        "x": -48.0,
+                        "y": 48.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,
-                        "y": 0.0,
+                        "y": 270.0,
                         "r": 0.0
                     },
-                    "Exit_Dir_Abs": "+X",
-                    "IsConnected": false,
-                    "TargetInstanceID": -1
+                    "Exit_Dir_Abs": "-Y",
+                    "IsConnected": true,
+                    "TargetInstanceID": 8
                 },
                 {
                     "Index": 1,
                     "Exit_Pos_Rev": {
-                        "x": 4,
-                        "y": -1,
-                        "z": 1
+                        "x": -3,
+                        "y": 5,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 64.0,
-                        "y": -16.0,
-                        "z": 16.0
+                        "x": -48.0,
+                        "y": 80.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,
@@ -511,82 +547,68 @@
                         "r": 0.0
                     },
                     "Exit_Dir_Abs": "+Y",
-                    "IsConnected": true,
-                    "TargetInstanceID": 8
+                    "IsConnected": false,
+                    "TargetInstanceID": -1
                 }
             ]
         },
         {
             "Rail_Index": 8,
-            "Rail_ID": "BP_Bump_FD_X2_Y1_Z2_Rail",
+            "Rail_ID": "BP_Curve_L90_Borderless_O_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 4,
-                "y": -1,
-                "z": 1
+                "x": -3,
+                "y": 3,
+                "z": -1
             },
             "Pos_Abs": {
-                "x": 64.0,
-                "y": -16.0,
-                "z": 16.0
+                "x": -48.0,
+                "y": 48.0,
+                "z": -16.0
             },
             "Rot_Abs": {
                 "p": 0.0,
-                "y": 90.0,
+                "y": 270.0,
                 "r": 0.0
             },
-            "Dir_Abs": "+Y",
+            "Dir_Abs": "-Y",
             "Size_Rev": {
-                "x": 2,
+                "x": 1,
                 "y": 1,
-                "z": 2
+                "z": 1
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 4,
-                    "y": -1,
-                    "z": 1
-                },
-                {
-                    "x": 4,
-                    "y": -1,
-                    "z": 0
-                },
-                {
-                    "x": 4,
-                    "y": 0,
-                    "z": 1
-                },
-                {
-                    "x": 4,
-                    "y": 0,
-                    "z": 0
+                    "x": -3,
+                    "y": 3,
+                    "z": -1
                 }
             ],
             "Diff_Base": 0,
-            "Diff_Act": 5.2,
+            "Diff_Act": 2.5,
             "Prev_Index": 7,
             "Next_Index": [
+                9,
                 9
             ],
             "Exit": [
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 4,
-                        "y": 1,
-                        "z": 0
+                        "x": -4,
+                        "y": 3,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 64.0,
-                        "y": 16.0,
-                        "z": 0.0
+                        "x": -64.0,
+                        "y": 48.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,
-                        "y": 90.0,
+                        "y": 180.0,
                         "r": 0.0
                     },
-                    "Exit_Dir_Abs": "+Y",
+                    "Exit_Dir_Abs": "-X",
                     "IsConnected": true,
                     "TargetInstanceID": 9
                 }
@@ -594,16 +616,77 @@
         },
         {
             "Rail_Index": 9,
-            "Rail_ID": "BP_End_F_X1_Y1_Z1_Rail",
+            "Rail_ID": "BP_Curve_L90_Borderless_Caved_X1_Y1_Z1_Rail",
             "Pos_Rev": {
-                "x": 4,
-                "y": 1,
-                "z": 0
+                "x": -4,
+                "y": 3,
+                "z": -1
             },
             "Pos_Abs": {
-                "x": 64.0,
-                "y": 16.0,
-                "z": 0.0
+                "x": -64.0,
+                "y": 48.0,
+                "z": -16.0
+            },
+            "Rot_Abs": {
+                "p": 0.0,
+                "y": 180.0,
+                "r": 0.0
+            },
+            "Dir_Abs": "-X",
+            "Size_Rev": {
+                "x": 1,
+                "y": 1,
+                "z": 1
+            },
+            "Occupied_Cells_Rev": [
+                {
+                    "x": -4,
+                    "y": 3,
+                    "z": -1
+                }
+            ],
+            "Diff_Base": 0,
+            "Diff_Act": 4.63184,
+            "Prev_Index": 8,
+            "Next_Index": [
+                10
+            ],
+            "Exit": [
+                {
+                    "Index": 0,
+                    "Exit_Pos_Rev": {
+                        "x": -4,
+                        "y": 4,
+                        "z": -1
+                    },
+                    "Exit_Pos_Abs": {
+                        "x": -64.0,
+                        "y": 64.0,
+                        "z": -16.0
+                    },
+                    "Exit_Rot_Abs": {
+                        "p": 0.0,
+                        "y": 90.0,
+                        "r": 0.0
+                    },
+                    "Exit_Dir_Abs": "+Y",
+                    "IsConnected": true,
+                    "TargetInstanceID": 10
+                }
+            ]
+        },
+        {
+            "Rail_Index": 10,
+            "Rail_ID": "BP_End_F_X1_Y1_Z1_Rail",
+            "Pos_Rev": {
+                "x": -4,
+                "y": 4,
+                "z": -1
+            },
+            "Pos_Abs": {
+                "x": -64.0,
+                "y": 64.0,
+                "z": -16.0
             },
             "Rot_Abs": {
                 "p": 0.0,
@@ -618,27 +701,27 @@
             },
             "Occupied_Cells_Rev": [
                 {
-                    "x": 4,
-                    "y": 1,
-                    "z": 0
+                    "x": -4,
+                    "y": 4,
+                    "z": -1
                 }
             ],
             "Diff_Base": 0,
             "Diff_Act": 0.0,
-            "Prev_Index": 8,
+            "Prev_Index": 9,
             "Next_Index": [],
             "Exit": [
                 {
                     "Index": 0,
                     "Exit_Pos_Rev": {
-                        "x": 4,
-                        "y": 2,
-                        "z": 0
+                        "x": -4,
+                        "y": 5,
+                        "z": -1
                     },
                     "Exit_Pos_Abs": {
-                        "x": 64.0,
-                        "y": 32.0,
-                        "z": 0.0
+                        "x": -64.0,
+                        "y": 80.0,
+                        "z": -16.0
                     },
                     "Exit_Rot_Abs": {
                         "p": 0.0,

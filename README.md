@@ -20,7 +20,6 @@
 ├── render_maze.html           # [工具] H5 3D 迷宫查看器 (基于 Three.js)
 ├── rail_config.csv            # [配置] 轨道零件配置表 (UE导出)
 ├── template_maze_layout.json  # [参考] JSON 数据结构模板
-├── pseudo.md                  # [文档] 算法逻辑流程图 (Mermaid)
 ├── README.md                  # [文档] 项目说明文档
 └── output/                    # [输出] 生成结果目录
     └── maze_layout_xxxx.json  # 自动生成的迷宫文件
@@ -93,7 +92,62 @@ python maze_generator.py
     *   如果放置成功，计算新难度并将其新出口加入 `OpenList`。
 3.  **终结**: 当累计难度达到设定阈值 (`TARGET_DIFFICULTY`) 时，强制尝试放置 End 轨道。
 
-> 详细的逻辑流程图请查阅 [pseudo.md](pseudo.md)。
+## 🏗️ 代码结构与逻辑 (Code Structure & Logic)
+
+核心脚本 `maze_generator.py` 采用严格的分层注释结构，逻辑流如下：
+
+*   **1. 基础配置与常量**
+    *   1.1 全局常量 (Scale, Bounds)
+    *   1.2 边界模式枚举
+*   **2. 核心数据结构**
+    *   2.1 向量类 (`Vector3`)
+    *   2.2 轨道配置项 (`RailConfigItem`)
+    *   2.3 开放连接点 (`OpenConnector`)
+    *   2.4 轨道实例 (`RailInstance`)
+*   **3. 辅助计算逻辑**
+    *   3.1 占用格子计算 (`calculate_occupied_cells`)
+        *   3.1.1 确定局部遍历范围
+        *   3.1.2 解析 Y 轴范围
+        *   3.1.3 解析 Z 轴范围
+        *   3.1.4 遍历并生成世界坐标
+*   **4. 配置加载模块**
+    *   4.1 加载配置 (`load_config`)
+*   **5. 迷宫生成器核心 (`MazeGenerator`)**
+    *   5.1 初始化
+    *   5.2 状态检查与工具 (边界、碰撞、方向转换)
+    *   5.3 核心放置逻辑 (`place_rail_v2`)
+    *   5.4 生成流程 (`generate`)
+    *   5.5 导出逻辑 (`export_json`)
+*   **6. 程序入口**
+    *   6.1 主执行块
+
+可视化工具 `maze_viewer.html` 同样遵循分层结构：
+
+*   **1. 基础配置与依赖**
+    *   1.1 全局常量 (Grid Scale, Bounds)
+*   **2. 场景初始化**
+    *   2.1 调试辅助网格 (Debug Grid)
+    *   2.2 坐标轴辅助
+    *   2.3 相机与渲染器
+    *   2.4 灯光系统
+*   **3. 拖拽与文件解析**
+    *   3.1 拖拽事件绑定
+    *   3.2 JSON 解析
+*   **4. 资源管理**
+    *   4.1 共享几何体与材质 (InstancedMesh 优化)
+    *   4.2 资源清理函数
+    *   4.3 全局状态映射
+*   **5. 场景构建核心 (`buildScene`)**
+    *   5.1 清理旧场景
+    *   5.2 更新 UI 统计信息
+    *   5.3 绘制迷宫边界框
+    *   5.4 实例化网格准备
+    *   5.5 创建实例化网格
+    *   5.6 填充实例数据 (Blocks, Arrows, Text)
+*   **6. 交互与射线检测**
+    *   6.1 射线初始化
+    *   6.2 鼠标移动处理 (Hover 高亮)
+*   **7. 渲染循环**
 
 ## 📄 输出格式 (Output Format)
 

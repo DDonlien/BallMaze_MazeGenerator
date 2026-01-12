@@ -32,18 +32,28 @@
     </div>
 
     <script type="module">
+        // ==========================================
+        // 1. 基础配置与依赖 (Basic Config & Imports)
+        // ==========================================
+
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+        // 1.1 全局常量
         // 修正 3.1: 比例 16cm
         const GRID_SCALE = 16.0;
         // 迷宫边界 (需与 Python MAZE_BOUNDS 保持一致)
         const MAZE_BOUNDS = { x: 4, y: 4, z: 1 };
 
+        // ==========================================
+        // 2. 场景初始化 (Scene Initialization)
+        // ==========================================
+
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a1a);
 
-        // Debug Grid (每格 16 单位) - on XY plane
+        // 2.1 调试辅助网格 (Debug Grid)
+        // 每格 16 单位 - on XY plane
         const gridSize = 3200; // 足够大的范围，且是 16 的倍数
         const gridDivisions = gridSize / GRID_SCALE;
         const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x222222);
@@ -51,6 +61,8 @@
         // Shift grid so (0,0,0) is center of a cell
         gridHelper.position.set(GRID_SCALE/2, GRID_SCALE/2, 0);
         scene.add(gridHelper);
+        
+        // 2.2 坐标轴辅助
         const axesHelper = new THREE.AxesHelper(50);
         // UE (Left-Handed) Y is Right. Three.js (Right-Handed) Y is Up (or Left if Z-up).
         // We mapped UE +Y to Three -Y to preserve geometry.
@@ -58,6 +70,7 @@
         axesHelper.scale.set(1, -1, 1);
         scene.add(axesHelper);
 
+        // 2.3 相机与渲染器
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
         camera.up.set(0, 0, 1); // Z-up
         camera.position.set(100, -100, 100); // Adjust default view
@@ -69,12 +82,17 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
+        // 2.4 灯光系统
         const light = new THREE.DirectionalLight(0xffffff, 1.2);
         light.position.set(50, 200, 100);
         scene.add(light);
         scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-        // Drag & Drop
+        // ==========================================
+        // 3. 拖拽与文件解析 (Drag & Drop & Parsing)
+        // ==========================================
+
+        // 3.1 拖拽事件绑定
         const dz = document.getElementById('dropzone');
         dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('hover'); };
         dz.ondragleave = () => dz.classList.remove('hover');
@@ -87,6 +105,7 @@
             reader.readAsText(file);
         };
 
+        // 3.2 JSON 解析
         function parseMaze(jsonStr) {
             try {
                 const data = JSON.parse(jsonStr);
@@ -96,16 +115,39 @@
             }
         }
 
-        // Shared Geometries & Materials for Optimization
+        // ==========================================
+        // 4. 资源管理 (Resource Management)
+        // ==========================================
+
+        // 4.1 共享几何体与材质 (Shared Geometries & Materials)
+        // 用于优化 InstancedMesh 性能
+        
+        // Define Flat Arrow Geometries
+        // Shaft: Box 1.5 wide, 1.0 high (unit), 0.4 thick
+        const flatArrowShaftGeo = new THREE.BoxGeometry(1.5, 1.0, 0.4);
+        flatArrowShaftGeo.translate(0, 0.5, 0); // Base at 0
+        
+        // Head: Extruded Triangle
+        const headShape = new THREE.Shape();
+        headShape.moveTo(-2.0, 0);
+        headShape.lineTo(2.0, 0);
+        headShape.lineTo(0, 1.0); // Tip at 1.0 height
+        headShape.lineTo(-2.0, 0);
+        
+        const flatArrowHeadGeo = new THREE.ExtrudeGeometry(headShape, {
+            depth: 0.4,
+            bevelEnabled: false
+        });
+        // Extrude creates depth along Z. Center it.
+        // Default creates mesh from Z=0 to Z=depth.
+        flatArrowHeadGeo.translate(0, 0, -0.2); // Center thickness at Z=0
+        
         const sharedGeos = {
-            arrowShaft: new THREE.CylinderGeometry(1.5, 1.5, 1.0, 8), // Unit length, will scale
-            arrowHead: new THREE.ConeGeometry(3.75, 1.0, 8), // Unit length, will scale
+            arrowShaft: flatArrowShaftGeo, 
+            arrowHead: flatArrowHeadGeo, 
             exitSphere: new THREE.SphereGeometry(0.7, 8, 8),
             boxCache: {} // Cache box geometries by size string "x_y_z"
         };
-        // Align geometries to +Y for easier rotation (Cylinder defaults to Y-up)
-        sharedGeos.arrowShaft.translate(0, 0.5, 0); // Base at 0
-        sharedGeos.arrowHead.translate(0, 0.5, 0); // Base at 0
         
         const sharedMats = {
             green: new THREE.MeshLambertMaterial({ color: 0x00ff00 }),
@@ -116,6 +158,7 @@
             boxMatCache: {} // Cache box materials by color
         };
 
+        // 4.2 资源清理函数
         function cleanScene(rootGroup) {
             if (!rootGroup) return;
             // Remove from scene
@@ -138,20 +181,28 @@
             sharedMats.boxMatCache = {};
         }
 
+        // 4.3 全局状态映射
         // Global Sprite Map for fast access
         window.spriteMap = {};
         window.railDataMap = {};
         window.railArrowMap = {};
         window.lastHoveredSprite = null;
         window.lastHoveredArrowIndices = []; // To reset colors
+        window.arrowMatrixCache = {}; // Cache for original arrow matrices
 
+        // 4.4 辅助工具
         // Helper for precision
         function formatFloat(val) {
             if (typeof val !== 'number') return val;
             return parseFloat(val.toFixed(8));
         }
 
+        // ==========================================
+        // 5. 场景构建核心 (Scene Building Core)
+        // ==========================================
+
         function buildScene(data) {
+            // 5.1 清理旧场景
             // Cleanup previous
             const toRemove = [];
             scene.traverse(c => { if(c.name === "MazeRoot") toRemove.push(c); });
@@ -167,6 +218,7 @@
             root.name = "MazeRoot";
             const rails = data.Rail;
 
+            // 5.2 更新 UI 统计信息
             // Stats Update
             const totalDiff = data.MapMeta.MazeDiff ? formatFloat(data.MapMeta.MazeDiff) : "N/A";
             
@@ -180,6 +232,7 @@
                 `<span style="color:#00ffff">●</span> Start <span style="color:#ff00ff">●</span> End` +
                 `</div>`;
 
+            // 5.3 绘制迷宫边界框
             // 0. Boundary Box (Revert to Static based on User Request)
             const half = GRID_SCALE / 2;
             const minX = -MAZE_BOUNDS.x * GRID_SCALE - half;
@@ -197,7 +250,7 @@
             root.add(line);
 
             // ==========================================
-            // INSTANCED MESH PREPARATION
+            // 5.4 实例化网格准备 (Instanced Mesh Prep)
             // ==========================================
             // 1. Analyze Rail Counts by Geometry (Size) - DEPRECATED / UNUSED in new logic
             // We now use a single Unit Cube scaled per instance.
@@ -220,7 +273,7 @@
             });
 
             // ==========================================
-            // CREATE INSTANCED MESHES
+            // 5.5 创建实例化网格 (Create Instanced Meshes)
             // ==========================================
             
             // A. Block Instances
@@ -229,7 +282,7 @@
             
             // Unit cube for scaling
             const standardBoxGeo = new THREE.BoxGeometry(1, 1, 1);
-            const standardMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+            const standardMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
             const blockMesh = new THREE.InstancedMesh(standardBoxGeo, standardMat, totalBlocks);
             
             blockMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -259,7 +312,7 @@
             if (exitCount > 0) { root.add(exitIMesh); }
 
             // ==========================================
-            // POPULATE INSTANCES
+            // 5.6 填充实例数据 (Populate Instances)
             // ==========================================
             
             const dummy = new THREE.Object3D();
@@ -271,23 +324,54 @@
             let arrowIdx = 0;
             let exitIdx = 0;
 
-            function addArrowInstance(dir, origin, length, isGreen) {
-                const headLen = length * 0.3;
-                const shaftLen = length - headLen;
+            // 5.6.1 箭头添加辅助函数
+            function getRailBasis(rotAbs) {
+                const rx = THREE.MathUtils.degToRad(rotAbs.r || 0);
+                const ry = THREE.MathUtils.degToRad(rotAbs.p || 0);
+                const rz = THREE.MathUtils.degToRad(rotAbs.y || 0);
+                const euler = new THREE.Euler(rx, ry, rz, 'ZYX');
+                
+                // Default Rail: Forward +X, Up +Z
+                const fwd = new THREE.Vector3(1, 0, 0).applyEuler(euler);
+                const up = new THREE.Vector3(0, 0, 1).applyEuler(euler);
+                return { fwd, up };
+            }
+
+            function addArrowInstance(origin, length, isGreen, dir, railUp, railFwd) {
+                const headScale = 1.5; 
+                const shaftLen = Math.max(0.1, length - headScale);
                 const color = isGreen ? colGreen : colRed;
+
+                // Construct Basis
+                const vecY = dir.clone().normalize();
+                let vecZ = railUp.clone().normalize();
+                
+                // Check parallel
+                if (Math.abs(vecY.dot(vecZ)) > 0.99) {
+                    vecZ = railFwd.clone().normalize();
+                    if (Math.abs(vecY.dot(vecZ)) > 0.99) {
+                        vecZ = new THREE.Vector3(0, 1, 0); 
+                    }
+                }
+                
+                const vecX = new THREE.Vector3().crossVectors(vecY, vecZ).normalize();
+                vecZ.crossVectors(vecX, vecY).normalize(); 
+                
+                const rotMat = new THREE.Matrix4().makeBasis(vecX, vecY, vecZ);
+                const quat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
 
                 // Shaft
                 dummy.scale.set(1, shaftLen, 1);
                 dummy.position.copy(origin);
-                dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+                dummy.quaternion.copy(quat);
                 dummy.updateMatrix();
                 shaftIMesh.setMatrixAt(arrowIdx, dummy.matrix);
                 shaftIMesh.setColorAt(arrowIdx, color);
 
                 // Head
-                dummy.scale.set(1, headLen, 1);
+                dummy.scale.set(1, headScale, 1);
                 dummy.position.copy(origin).add(dir.clone().multiplyScalar(shaftLen));
-                dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+                dummy.quaternion.copy(quat);
                 dummy.updateMatrix();
                 headIMesh.setMatrixAt(arrowIdx, dummy.matrix);
                 headIMesh.setColorAt(arrowIdx, color);
@@ -295,6 +379,7 @@
                 arrowIdx++;
             }
             
+            // 5.6.2 文本精灵添加辅助函数
             // Helper for Text Sprite (Persistent)
             function addTextSprite(message, pos) {
                 if (!sharedMats.boxMatCache["txt_" + message]) {
@@ -327,7 +412,7 @@
                 window.spriteMap[message] = sprite;
             }
 
-            // Populate Blocks
+            // 5.6.3 填充轨道方块 (Populate Blocks)
             let globalBlockIdx = 0;
             const GAP = 1.0; // Gap between rails
             
@@ -353,6 +438,8 @@
                 
                 // Transform
                 let cx, cy, cz;
+                let useOccupiedSize = false;
+                let sizeX, sizeY, sizeZ;
 
                 if (r.Occupied_Cells_Rev && r.Occupied_Cells_Rev.length > 0) {
                     // Calculate center of the bounding box of occupied cells
@@ -377,6 +464,12 @@
                     cx = (minX + maxX) / 2;
                     cy = (minY + maxY) / 2;
                     cz = (minZ + maxZ) / 2;
+                    
+                    // Calculate size from bounds
+                    sizeX = (maxX - minX) + GRID_SCALE - GAP;
+                    sizeY = (maxY - minY) + GRID_SCALE - GAP;
+                    sizeZ = (maxZ - minZ) + GRID_SCALE - GAP;
+                    useOccupiedSize = true;
                 } else {
                     // Fallback to Pos_Abs if no cell data
                     cx = r.Pos_Abs.x;
@@ -384,25 +477,33 @@
                     cz = r.Pos_Abs.z;
                 }
                 
-                // Size with Gap
-                // r.Size_Rev is expected to be {x, y, z}
-                const sx = (r.Size_Rev.x * GRID_SCALE) - GAP;
-                const sy = (r.Size_Rev.y * GRID_SCALE) - GAP;
-                const sz = (r.Size_Rev.z * GRID_SCALE) - GAP;
-                
                 dummy.position.set(cx, cy, cz);
                 
-                // Rotation
-                // JSON: p=Pitch(Y), y=Yaw(Z), r=Roll(X)
-                // Three: X, Y, Z radians.
-                const rx = THREE.MathUtils.degToRad(r.Rot_Abs.r || 0);
-                const ry = THREE.MathUtils.degToRad(r.Rot_Abs.p || 0);
-                const rz = THREE.MathUtils.degToRad(r.Rot_Abs.y || 0);
+                if (useOccupiedSize) {
+                    // If we use occupied cells, the box is axis-aligned to the grid.
+                    // We DO NOT apply the object's rotation because the occupied cells 
+                    // are already the result of the rotation in world space.
+                    dummy.rotation.set(0, 0, 0);
+                    dummy.scale.set(sizeX, sizeY, sizeZ);
+                } else {
+                    // Fallback: Use Size_Rev and apply rotation
+                    // r.Size_Rev is expected to be {x, y, z}
+                    const sx = (r.Size_Rev.x * GRID_SCALE) - GAP;
+                    const sy = (r.Size_Rev.y * GRID_SCALE) - GAP;
+                    const sz = (r.Size_Rev.z * GRID_SCALE) - GAP;
+                    
+                    // Rotation
+                    // JSON: p=Pitch(Y), y=Yaw(Z), r=Roll(X)
+                    // Three: X, Y, Z radians.
+                    const rx = THREE.MathUtils.degToRad(r.Rot_Abs.r || 0);
+                    const ry = THREE.MathUtils.degToRad(r.Rot_Abs.p || 0);
+                    const rz = THREE.MathUtils.degToRad(r.Rot_Abs.y || 0);
+                    
+                    // Apply rotation. Order ZYX is common for Euler if not specified.
+                    dummy.rotation.set(rx, ry, rz, 'ZYX');
+                    dummy.scale.set(sx, sy, sz);
+                }
                 
-                // Apply rotation. Order ZYX is common for Euler if not specified.
-                dummy.rotation.set(rx, ry, rz, 'ZYX');
-                
-                dummy.scale.set(sx, sy, sz);
                 dummy.updateMatrix();
                 
                 blockMesh.setMatrixAt(globalBlockIdx, dummy.matrix);
@@ -418,8 +519,10 @@
             blockMesh.instanceMatrix.needsUpdate = true;
             if (blockMesh.instanceColor) blockMesh.instanceColor.needsUpdate = true;
 
-            // Populate Arrows & Topology
+            // 5.6.4 填充箭头与拓扑 (Populate Arrows & Topology)
             rails.forEach(r => {
+                const railBasis = getRailBasis(r.Rot_Abs || {p:0, y:0, r:0});
+
                 // (A) Entrance
                 if (r.Prev_Index !== -1) {
                     const prev = rails.find(x => x.Rail_Index === r.Prev_Index);
@@ -428,54 +531,15 @@
                         if (connectedExit) {
                             const entPos = new THREE.Vector3(connectedExit.Exit_Pos_Abs.x, -connectedExit.Exit_Pos_Abs.y, connectedExit.Exit_Pos_Abs.z);
                             const entDir = getDirVector(connectedExit.Exit_Dir_Abs);
-                            // Entrance Arrow: Butt at face, points inward. Length ~4.
-                            // User wants: "Entrance arrow should be drawn at x=-8~-4" (if face at -8, flow +X).
-                            // BUT User said: "arrow positions are still offset, start/end too forward ... move back 8cm".
-                            // Previous logic: Base at Face. Tip at Face+4.
-                            // If we move back 8cm (0.5 Grid).
-                            // Base at Face - 8. Tip at Face - 4.
-                            // This puts the arrow entirely inside the PREVIOUS block (for entrance) or NEXT block?
-                            // Wait. Entrance Arrow is usually drawn on the CURRENT block to show where ball enters.
-                            // If Face is at -8 (Boundary). Current block is -8..8? No, Current block is 8..24?
-                            // If flow is +X. Connected Exit is at -8. Current Block starts at -8.
-                            // So Base at -8 is correct.
-                            // User says "too forward". Maybe they mean "too far into the block"?
-                            // "move back 8cm".
-                            // If we move Base from -8 to -16. That's outside the block.
-                            // If we move Base from -8 to 0. That's further inside.
-                            // "Forward" usually means along the arrow direction.
-                            // If Arrow points +X. "Too forward" means it's too far +X.
-                            // So we should move it -X (Back).
-                            // So Base at -8 -> Base at -16?
-                            // But -16 is the previous block center.
-                            // Maybe User wants the arrow centered on the face?
-                            // Or maybe my understanding of "Forward" is reversed?
-                            // User said: "start and end arrows are too forward (relative to arrow direction)".
-                            // "Move back 8cm".
-                            // Entrance Arrow: Dir is Inward (+X relative to face).
-                            // If it's "too forward", it's too deep inside.
-                            // "Move back" means move against Dir.
-                            // So Base at Face - 8.
-                            // If Face is -8. Base at -16.
-                            // This puts the arrow in the Previous Block (the one feeding us).
-                            // Maybe that's what they want?
-                            // But for Start/End arrows?
-                            // Let's just apply the offset requested: -8cm along direction.
                             
-                            // Current Origin: entPos.
-                            // New Origin: entPos - 8 * entDir.
                             const offset = 8.0;
                             const newOrigin = entPos.clone().sub(entDir.clone().multiplyScalar(offset));
                             
-                            addArrowInstance(entDir, newOrigin, 4.0, true);
+                            addArrowInstance(newOrigin, 4.0, true, entDir, railBasis.up, railBasis.fwd);
                             
-                            // Also map this arrow to the rail for highlighting?
-                            // This arrow belongs to 'r' (Entrance of r).
-                            // But instance mesh doesn't easily support per-instance logic unless we map index.
-                            // arrowIdx is incremented. We can store it.
                             if (!window.railArrowMap) window.railArrowMap = {};
                             if (!window.railArrowMap[r.Rail_Index]) window.railArrowMap[r.Rail_Index] = [];
-                            window.railArrowMap[r.Rail_Index].push(arrowIdx - 1); // Last added arrow
+                            window.railArrowMap[r.Rail_Index].push(arrowIdx - 1);
                         }
                     }
                 }
@@ -486,49 +550,17 @@
                     const exPos = new THREE.Vector3(ex.Exit_Pos_Abs.x, -ex.Exit_Pos_Abs.y, ex.Exit_Pos_Abs.z);
                     const exDir = getDirVector(ex.Exit_Dir_Abs);
                     
-                    // Exit Arrow: Tip at face, points outward. Length ~4.
                     const arrowLen = 4.0;
-                    // User wants: "Exit arrow should be drawn at x=4~8" (if face at 8, flow +X).
-                    // BUT User said: "start and end arrows are too forward ... move back 8cm".
-                    // Previous logic: Origin = Face - 4. (Base at 4, Tip at 8).
-                    // If we move back 8cm (0.5 Grid) against direction.
-                    // Origin = Face - 4 - 8 = Face - 12.
-                    // Base at -4. Tip at 0.
-                    // This puts the arrow entirely in the 0..-4 range? No.
-                    // If Face is 8. Base at -4. Tip at 0.
-                    // This is center of block (0).
-                    // So arrow is drawn from Center (0) to Center+4? No.
-                    // Arrow Length is 4.
-                    // Base at -4 (relative to face?). No, Absolute coords.
-                    // Face = 8.
-                    // Origin = 8 - 4 - 8 = -4.
-                    // Tip = Origin + 4 = 0.
-                    // So Arrow is -4..0.
-                    // Center of block is 0.
-                    // So Arrow points TO center?
-                    // Exit Arrow should point OUT.
-                    // User said "move back 8cm".
-                    // Maybe they want it centered in the cell?
-                    // Previous was 4..8.
-                    // New is -4..0.
-                    // This seems like a big jump.
-                    // But if "too forward" means "too close to the next block".
-                    // Then moving back pulls it into the current block.
-                    
                     const offset = 8.0;
-                    // Original Origin was (exPos - 4*Dir).
-                    // New Origin = Original - 8*Dir = exPos - 12*Dir.
-                    
                     const origin = exPos.clone().sub(exDir.clone().multiplyScalar(arrowLen + offset));
-                    addArrowInstance(exDir, origin, arrowLen, false);
+                    
+                    addArrowInstance(origin, arrowLen, false, exDir, railBasis.up, railBasis.fwd);
                     
                     if (!window.railArrowMap) window.railArrowMap = {};
                     if (!window.railArrowMap[r.Rail_Index]) window.railArrowMap[r.Rail_Index] = [];
                     window.railArrowMap[r.Rail_Index].push(arrowIdx - 1);
                     
-                    // Sphere (Red if unconnected, Green if connected)
-                    // Note: If arrow is Red (unconnected), sphere should match or be distinctive?
-                    // User asked for "Red Dot" for open exit.
+                    // Sphere
                     dummy.scale.set(1, 1, 1);
                     dummy.position.copy(exPos);
                     dummy.rotation.set(0,0,0);
@@ -556,9 +588,14 @@
             setupRaycaster(root);
         }
 
+        // ==========================================
+        // 6. 交互与射线检测 (Interaction & Raycaster)
+        // ==========================================
+
         // Raycaster Global State
         let raycaster, mouse, hoverSprite;
         
+        // 6.1 射线初始化
         function setupRaycaster(targetRoot) {
             if (!raycaster) {
                 raycaster = new THREE.Raycaster();
@@ -573,6 +610,7 @@
             }
         }
 
+        // 6.2 鼠标移动处理
         function onMouseMove(event) {
             // Normalize mouse
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -617,43 +655,40 @@
                 window.lastHoveredSprite.scale.set(8, 8, 1);
                 window.lastHoveredSprite = null;
             }
-            // Reset Arrow Colors
+            // Reset Arrow Colors & Scales
             if (window.lastHoveredArrowIndices.length > 0) {
                  // We need access to shaftIMesh and headIMesh to reset color
                  // They are inside buildScene scope. We should expose them or find them.
                  // Finding by name is easiest.
                  const shaft = scene.getObjectByName("ArrowShaftMesh");
                  const head = scene.getObjectByName("ArrowHeadMesh");
-                 const white = new THREE.Color(0xffffff);
-                 const green = new THREE.Color(0x00ff00);
-                 const red = new THREE.Color(0xff0000);
-                 
-                 // Ideally we should restore original color (Green/Red).
-                 // But we didn't store which was which.
-                 // Simplified: Just reset to white? No, they were Red/Green.
-                 // We need to know if it was Entrance (Green) or Exit (Red/Green).
-                 // This is getting complex for simple hover.
-                 // Let's just set them to White for highlight, and back to... wait.
-                 // If we set them to Yellow for highlight.
-                 // To reset, we need the original color.
-                 // Optimization: Store original color in instance color attribute?
-                 // InstancedMesh has .getColorAt / .setColorAt.
                  
                  if (shaft && head) {
                      window.lastHoveredArrowIndices.forEach(idx => {
-                         // We need to retrieve original color before highlighting?
-                         // Or we can just re-calculate it? 
-                         // Or we can just store it in a cache when we highlight.
+                         // Reset Color
                          if (window.arrowColorCache && window.arrowColorCache[idx]) {
                              const col = window.arrowColorCache[idx];
                              shaft.setColorAt(idx, col);
                              head.setColorAt(idx, col);
                          }
+                         
+                         // Reset Matrix (Scale)
+                         if (window.arrowMatrixCache) {
+                             if (window.arrowMatrixCache['s' + idx]) {
+                                 shaft.setMatrixAt(idx, window.arrowMatrixCache['s' + idx]);
+                             }
+                             if (window.arrowMatrixCache['h' + idx]) {
+                                 head.setMatrixAt(idx, window.arrowMatrixCache['h' + idx]);
+                             }
+                         }
                      });
                      shaft.instanceColor.needsUpdate = true;
                      head.instanceColor.needsUpdate = true;
+                     shaft.instanceMatrix.needsUpdate = true;
+                     head.instanceMatrix.needsUpdate = true;
                  }
                  window.lastHoveredArrowIndices = [];
+                 window.arrowMatrixCache = {}; // Clear matrix cache
             }
 
             if (foundBlock) {
@@ -673,20 +708,48 @@
                      
                      if (shaft && head) {
                          if (!window.arrowColorCache) window.arrowColorCache = {};
+                         // Matrix cache is already initialized/cleared globally or above
+                         if (!window.arrowMatrixCache) window.arrowMatrixCache = {}; 
+
                          const highlightCol = new THREE.Color(0xffff00); // Yellow
                          const tempCol = new THREE.Color();
+                         const tempMatrix = new THREE.Matrix4();
+                         const tempPos = new THREE.Vector3();
+                         const tempQuat = new THREE.Quaternion();
+                         const tempScale = new THREE.Vector3();
                          
                          indices.forEach(idx => {
                              // Save original color
                              shaft.getColorAt(idx, tempCol);
                              window.arrowColorCache[idx] = tempCol.clone();
                              
-                             // Set Highlight
+                             // Save & Update Shaft Matrix
+                             shaft.getMatrixAt(idx, tempMatrix);
+                             window.arrowMatrixCache['s' + idx] = tempMatrix.clone();
+                             
+                             tempMatrix.decompose(tempPos, tempQuat, tempScale);
+                             tempScale.multiplyScalar(2.0); // Scale UP
+                             tempMatrix.compose(tempPos, tempQuat, tempScale);
+                             shaft.setMatrixAt(idx, tempMatrix);
+                             
+                             // Save & Update Head Matrix
+                             head.getMatrixAt(idx, tempMatrix);
+                             window.arrowMatrixCache['h' + idx] = tempMatrix.clone();
+                             
+                             tempMatrix.decompose(tempPos, tempQuat, tempScale);
+                             tempScale.multiplyScalar(2.0); // Scale UP
+                             tempMatrix.compose(tempPos, tempQuat, tempScale);
+                             head.setMatrixAt(idx, tempMatrix);
+                             
+                             // Set Highlight Color
                              shaft.setColorAt(idx, highlightCol);
                              head.setColorAt(idx, highlightCol);
                          });
                          shaft.instanceColor.needsUpdate = true;
                          head.instanceColor.needsUpdate = true;
+                         shaft.instanceMatrix.needsUpdate = true;
+                         head.instanceMatrix.needsUpdate = true;
+                         
                          window.lastHoveredArrowIndices = indices;
                      }
                 }
@@ -733,6 +796,7 @@
             }
         }
 
+        // 6.3 辅助：更新悬浮文本 (未使用但保留)
         function updateHoverText(id, pos) {
             const message = "#" + id;
             
@@ -772,6 +836,7 @@
             hoverSprite.position.copy(pos).add(new THREE.Vector3(0, 0, 10));
         }
 
+        // 6.4 辅助：方向向量转换
         function getDirVector(dirStr) {
             // UE: +Y is Right.
             // Three (Y-flipped): Right is -Y.
@@ -784,6 +849,10 @@
             return new THREE.Vector3(0, 0, 1);
         }
 
+        // ==========================================
+        // 7. 渲染循环 (Render Loop)
+        // ==========================================
+
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
@@ -791,6 +860,7 @@
         }
         animate();
         
+        // 7.1 窗口调整事件
         window.onresize = () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
